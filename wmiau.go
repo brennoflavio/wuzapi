@@ -168,10 +168,10 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 		Msg("Checking event subscription")
 
 	// Check if the current event is in the subscriptions
-	checkIfSubscribedInEvent := checkIfSubscribedToEvent(subscribedEvents, postmap["type"].(string), mycli.userID)
-	if !checkIfSubscribedInEvent {
-		return
-	}
+	// checkIfSubscribedInEvent := checkIfSubscribedToEvent(subscribedEvents, postmap["type"].(string), mycli.userID)
+	// if !checkIfSubscribedInEvent {
+	// 	return
+	// }
 
 	// Prepare webhook data
 	jsonData, err := json.Marshal(postmap)
@@ -189,17 +189,17 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 	go sendToGlobalRabbit(jsonData)
 }
 
-func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
-	if !Find(subscribedEvents, eventType) && !Find(subscribedEvents, "All") {
-		log.Warn().
-			Str("type", eventType).
-			Strs("subscribedEvents", subscribedEvents).
-			Str("userID", userId).
-			Msg("Skipping webhook. Not subscribed for this type")
-		return false
-	}
-	return true
-}
+// func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
+// 	if !Find(subscribedEvents, eventType) && !Find(subscribedEvents, "All") {
+// 		log.Warn().
+// 			Str("type", eventType).
+// 			Strs("subscribedEvents", subscribedEvents).
+// 			Str("userID", userId).
+// 			Msg("Skipping webhook. Not subscribed for this type")
+// 		return false
+// 	}
+// 	return true
+// }
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *server) connectOnStartup() {
