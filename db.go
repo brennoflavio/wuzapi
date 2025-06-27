@@ -21,7 +21,7 @@ type DatabaseConfig struct {
 }
 
 func InitializeDatabase(exPath string) (*sqlx.DB, error) {
-	config := getDatabaseConfig(exPath)
+	config := getDatabaseConfig()
 
 	if config.Type == "postgres" {
 		return initializePostgres(config)
@@ -29,13 +29,14 @@ func InitializeDatabase(exPath string) (*sqlx.DB, error) {
 	return initializeSQLite(config)
 }
 
-func getDatabaseConfig(exPath string) DatabaseConfig {
+func getDatabaseConfig() DatabaseConfig {
 	// Check for PostgreSQL configuration
 	dbUser := os.Getenv("DB_USER")
 	dbPassword := os.Getenv("DB_PASSWORD")
 	dbName := os.Getenv("DB_NAME")
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
+	dbPath := os.Getenv("DB_PATH")
 
 	// If all PostgreSQL configs are present, use PostgreSQL
 	if dbUser != "" && dbPassword != "" && dbName != "" && dbHost != "" && dbPort != "" {
@@ -52,7 +53,7 @@ func getDatabaseConfig(exPath string) DatabaseConfig {
 	// Default to SQLite
 	return DatabaseConfig{
 		Type: "sqlite",
-		Path: filepath.Join(exPath, "dbdata"),
+		Path: filepath.Join(dbPath, "dbdata"),
 	}
 }
 

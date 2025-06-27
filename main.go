@@ -186,7 +186,7 @@ func main() {
 	}
 
 	// Get database configuration
-	config := getDatabaseConfig(exPath)
+	config := getDatabaseConfig()
 	var storeConnStr string
 	if config.Type == "postgres" {
 		storeConnStr = fmt.Sprintf(
