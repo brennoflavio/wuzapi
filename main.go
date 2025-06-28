@@ -148,6 +148,7 @@ func init() {
 	}
 
 	InitRabbitMQ()
+	InitRedis()
 }
 
 func main() {

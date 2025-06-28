@@ -187,6 +187,8 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 	go sendToGlobalWebHook(jsonData, mycli.token, mycli.userID)
 
 	go sendToGlobalRabbit(jsonData)
+
+	go AddToRedisQueue("whatsapp_events", string(jsonData), 0)
 }
 
 // func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
