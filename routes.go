@@ -15,12 +15,6 @@ type Middleware = alice.Constructor
 
 func (s *server) routes() {
 
-	ex, err := os.Executable()
-	if err != nil {
-		panic(err)
-	}
-	exPath := filepath.Dir(ex)
-
 	var routerLog zerolog.Logger
 	logOutput := os.Stdout
 	if s.mode == Stdio {
@@ -46,6 +40,10 @@ func (s *server) routes() {
 			Str("host", *address).
 			Logger()
 	}
+
+	// Serve media files from disk
+	mediaDir := GetFileManager().GetMediaDir()
+	s.router.PathPrefix("/media/").Handler(http.StripPrefix("/media/", http.FileServer(http.Dir(mediaDir))))
 
 	s.router.Handle("/health", s.GetHealth()).Methods("GET")
 
@@ -91,17 +89,7 @@ func (s *server) routes() {
 	s.router.Handle("/webhook", c.Then(s.DeleteWebhook())).Methods("DELETE")
 	s.router.Handle("/webhook", c.Then(s.UpdateWebhook())).Methods("PUT")
 
-	s.router.Handle("/session/proxy", c.Then(s.SetProxy())).Methods("POST")
 	s.router.Handle("/session/history", c.Then(s.SetHistory())).Methods("POST")
-
-	s.router.Handle("/session/s3/config", c.Then(s.ConfigureS3())).Methods("POST")
-	s.router.Handle("/session/s3/config", c.Then(s.GetS3Config())).Methods("GET")
-	s.router.Handle("/session/s3/config", c.Then(s.DeleteS3Config())).Methods("DELETE")
-	s.router.Handle("/session/s3/test", c.Then(s.TestS3Connection())).Methods("POST")
-
-	s.router.Handle("/session/hmac/config", c.Then(s.ConfigureHmac())).Methods("POST")
-	s.router.Handle("/session/hmac/config", c.Then(s.GetHmacConfig())).Methods("GET")
-	s.router.Handle("/session/hmac/config", c.Then(s.DeleteHmacConfig())).Methods("DELETE")
 
 	s.router.Handle("/chat/send/text", c.Then(s.SendMessage())).Methods("POST")
 	s.router.Handle("/chat/delete", c.Then(s.DeleteMessage())).Methods("POST")
@@ -158,6 +146,4 @@ func (s *server) routes() {
 	s.router.Handle("/group/updateparticipants", c.Then(s.UpdateGroupParticipants())).Methods("POST")
 
 	s.router.Handle("/newsletter/list", c.Then(s.ListNewsletter())).Methods("GET")
-
-	s.router.PathPrefix("/").Handler(http.FileServer(http.Dir(exPath + "/static/")))
 }

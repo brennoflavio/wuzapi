@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -140,9 +138,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 		webhook := ""
 		jid := ""
 		events := ""
-		proxy_url := ""
 		qrcode := ""
-		var hasHmac bool // ← Nova variável para status HMAC
 
 		// Get token from headers or uri parameters
 		token := r.Header.Get("token")
@@ -154,7 +150,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
 			// Checks DB from matching user and store user values in context
-			rows, err := s.db.Query("SELECT id,name,webhook,jid,events,proxy_url,qrcode,history,hmac_key IS NOT NULL AND length(hmac_key) > 0 FROM users WHERE token=$1 LIMIT 1", token)
+			rows, err := s.db.Query("SELECT id,name,webhook,jid,events,qrcode,history FROM users WHERE token=$1 LIMIT 1", token)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
@@ -162,7 +158,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 			defer rows.Close()
 			var history sql.NullInt64
 			for rows.Next() {
-				err = rows.Scan(&txtid, &name, &webhook, &jid, &events, &proxy_url, &qrcode, &history, &hasHmac)
+				err = rows.Scan(&txtid, &name, &webhook, &jid, &events, &qrcode, &history)
 				if err != nil {
 					s.Respond(w, r, http.StatusInternalServerError, err)
 					return
@@ -181,11 +177,9 @@ func (s *server) authalice(next http.Handler) http.Handler {
 					"Jid":     jid,
 					"Webhook": webhook,
 					"Token":   token,
-					"Proxy":   proxy_url,
 					"Events":  events,
 					"Qrcode":  qrcode,
 					"History": historyStr,
-					"HasHmac": strconv.FormatBool(hasHmac),
 				}}
 
 				userinfocache.Set(token, v, cache.NoExpiration)
@@ -721,9 +715,7 @@ func (s *server) GetStatus() http.HandlerFunc {
 			Str("Webhook", userInfo.Get("Webhook")).
 			Str("Token", userInfo.Get("Token")).
 			Str("Events", userInfo.Get("Events")).
-			Str("Proxy", userInfo.Get("Proxy")).
 			Str("History", userInfo.Get("History")).
-			Str("HasHmac", userInfo.Get("HasHmac")).
 			Msg("User info values")
 
 		txtid := userInfo.Get("Id")
@@ -731,70 +723,17 @@ func (s *server) GetStatus() http.HandlerFunc {
 		isConnected := clientManager.GetWhatsmeowClient(txtid).IsConnected()
 		isLoggedIn := clientManager.GetWhatsmeowClient(txtid).IsLoggedIn()
 
-		var proxyURL string
-		s.db.QueryRow("SELECT proxy_url FROM users WHERE id = $1", txtid).Scan(&proxyURL)
-		proxyConfig := map[string]interface{}{
-			"enabled":   proxyURL != "",
-			"proxy_url": proxyURL,
-		}
-
-		var s3Enabled bool
-		var s3Endpoint, s3Region, s3Bucket, s3PublicURL, s3MediaDelivery string
-		var s3PathStyle bool
-		var s3RetentionDays int
-
-		// Start with safe defaults so the field is always present in the response
-		s3Config := map[string]interface{}{
-			"enabled":        false,
-			"endpoint":       "",
-			"region":         "",
-			"bucket":         "",
-			"access_key":     "***",
-			"path_style":     false,
-			"public_url":     "",
-			"media_delivery": "",
-			"retention_days": 0,
-		}
-		err := s.db.QueryRow(`SELECT COALESCE(s3_enabled, false), COALESCE(s3_endpoint, ''), COALESCE(s3_region, ''), COALESCE(s3_bucket, ''), COALESCE(s3_path_style, false), COALESCE(s3_public_url, ''), COALESCE(media_delivery, ''), COALESCE(s3_retention_days, 0) FROM users WHERE id = $1`, txtid).Scan(&s3Enabled, &s3Endpoint, &s3Region, &s3Bucket, &s3PathStyle, &s3PublicURL, &s3MediaDelivery, &s3RetentionDays)
-
-		if err == nil {
-			// Overwrite defaults with actual values if the query succeeded
-			s3Config["enabled"] = s3Enabled
-			s3Config["endpoint"] = s3Endpoint
-			s3Config["region"] = s3Region
-			s3Config["bucket"] = s3Bucket
-			s3Config["path_style"] = s3PathStyle
-			s3Config["public_url"] = s3PublicURL
-			s3Config["media_delivery"] = s3MediaDelivery
-			s3Config["retention_days"] = s3RetentionDays
-		} else {
-			if err != sql.ErrNoRows {
-				log.Warn().Err(err).Str("user_id", txtid).Msg("Failed to query S3 config for user")
-			}
-		}
-
-		var hmacKey []byte
-		err = s.db.QueryRow("SELECT hmac_key FROM users WHERE id = $1", txtid).Scan(&hmacKey)
-		if err != nil && err != sql.ErrNoRows {
-			log.Error().Err(err).Str("userID", txtid).Msg("Failed to query HMAC key")
-		}
-		hmacConfigured := len(hmacKey) > 0
-
 		response := map[string]interface{}{
-			"id":              txtid,
-			"name":            userInfo.Get("Name"),
-			"connected":       isConnected,
-			"loggedIn":        isLoggedIn,
-			"token":           userInfo.Get("Token"),
-			"jid":             userInfo.Get("Jid"),
-			"webhook":         userInfo.Get("Webhook"),
-			"events":          userInfo.Get("Events"),
-			"proxy_url":       userInfo.Get("Proxy"),
-			"qrcode":          userInfo.Get("Qrcode"),
-			"history":         userInfo.Get("History"),
-			"proxy_config":    proxyConfig,
-			"s3_config":       s3Config,
-			"hmac_configured": hmacConfigured,
+			"id":        txtid,
+			"name":      userInfo.Get("Name"),
+			"connected": isConnected,
+			"loggedIn":  isLoggedIn,
+			"token":     userInfo.Get("Token"),
+			"jid":       userInfo.Get("Jid"),
+			"webhook":   userInfo.Get("Webhook"),
+			"events":    userInfo.Get("Events"),
+			"qrcode":    userInfo.Get("Qrcode"),
+			"history":   userInfo.Get("History"),
 		}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
@@ -4529,17 +4468,16 @@ func (s *server) ListNewsletter() http.HandlerFunc {
 // Admin List users
 func (s *server) ListUsers() http.HandlerFunc {
 	type usersStruct struct {
-		Id         string         `db:"id"`
-		Name       string         `db:"name"`
-		Token      string         `db:"token"`
-		Webhook    string         `db:"webhook"`
-		Jid        string         `db:"jid"`
-		Qrcode     string         `db:"qrcode"`
-		Connected  sql.NullBool   `db:"connected"`
-		Expiration sql.NullInt64  `db:"expiration"`
-		ProxyURL   sql.NullString `db:"proxy_url"`
-		Events     string         `db:"events"`
-		History    sql.NullInt64  `db:"history"`
+		Id         string        `db:"id"`
+		Name       string        `db:"name"`
+		Token      string        `db:"token"`
+		Webhook    string        `db:"webhook"`
+		Jid        string        `db:"jid"`
+		Qrcode     string        `db:"qrcode"`
+		Connected  sql.NullBool  `db:"connected"`
+		Expiration sql.NullInt64 `db:"expiration"`
+		Events     string        `db:"events"`
+		History    sql.NullInt64 `db:"history"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -4550,11 +4488,11 @@ func (s *server) ListUsers() http.HandlerFunc {
 
 		if hasID {
 			// Fetch a single user
-			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events, history FROM users WHERE id = $1"
+			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, events, history FROM users WHERE id = $1"
 			args = append(args, userID)
 		} else {
 			// Fetch all users
-			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events, history FROM users"
+			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, events, history FROM users"
 		}
 
 		rows, err := s.db.Queryx(query, args...)
@@ -4594,49 +4532,8 @@ func (s *server) ListUsers() http.HandlerFunc {
 				"connected":  isConnected,
 				"loggedIn":   isLoggedIn,
 				"expiration": user.Expiration.Int64,
-				"proxy_url":  user.ProxyURL.String,
 				"events":     user.Events,
 			}
-			// Add proxy_config
-			proxyURL := user.ProxyURL.String
-			userMap["proxy_config"] = map[string]interface{}{
-				"enabled":   proxyURL != "",
-				"proxy_url": proxyURL,
-			}
-			// Add s3_config (search S3 fields in the database)
-			var s3Enabled bool
-			var s3Endpoint, s3Region, s3Bucket, s3PublicURL, s3MediaDelivery string
-			var s3PathStyle bool
-			var s3RetentionDays int
-			// Start with safe defaults so the field is always present in the response
-			s3Config := map[string]interface{}{
-				"enabled":        false,
-				"endpoint":       "",
-				"region":         "",
-				"bucket":         "",
-				"access_key":     "***",
-				"path_style":     false,
-				"public_url":     "",
-				"media_delivery": "",
-				"retention_days": 0,
-			}
-			err = s.db.QueryRow(`SELECT COALESCE(s3_enabled, false), COALESCE(s3_endpoint, ''), COALESCE(s3_region, ''), COALESCE(s3_bucket, ''), COALESCE(s3_path_style, false), COALESCE(s3_public_url, ''), COALESCE(media_delivery, ''), COALESCE(s3_retention_days, 0) FROM users WHERE id = $1`, user.Id).Scan(&s3Enabled, &s3Endpoint, &s3Region, &s3Bucket, &s3PathStyle, &s3PublicURL, &s3MediaDelivery, &s3RetentionDays)
-			if err == nil {
-				// Overwrite defaults with actual values if the query succeeded
-				s3Config["enabled"] = s3Enabled
-				s3Config["endpoint"] = s3Endpoint
-				s3Config["region"] = s3Region
-				s3Config["bucket"] = s3Bucket
-				s3Config["path_style"] = s3PathStyle
-				s3Config["public_url"] = s3PublicURL
-				s3Config["media_delivery"] = s3MediaDelivery
-				s3Config["retention_days"] = s3RetentionDays
-			} else {
-				if err != sql.ErrNoRows {
-					log.Warn().Err(err).Str("user_id", user.Id).Msg("Failed to query S3 config for user")
-				}
-			}
-			userMap["s3_config"] = s3Config
 			users = append(users, userMap)
 		}
 		// Check for any error that occurred during iteration
@@ -4662,22 +4559,14 @@ func (s *server) AddUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		type ProxyConfig struct {
-			Enabled  bool   `json:"enabled"`
-			ProxyURL string `json:"proxyURL"`
-		}
-
 		// Parse the request body
 		var user struct {
-			Name        string       `json:"name"`
-			Token       string       `json:"token"`
-			Webhook     string       `json:"webhook,omitempty"`
-			Expiration  int          `json:"expiration,omitempty"`
-			Events      string       `json:"events,omitempty"`
-			ProxyConfig *ProxyConfig `json:"proxyConfig,omitempty"`
-			S3Config    *S3Config    `json:"s3Config,omitempty"`
-			HmacKey     string       `json:"hmacKey,omitempty"`
-			History     int          `json:"history,omitempty"`
+			Name       string `json:"name"`
+			Token      string `json:"token"`
+			Webhook    string `json:"webhook,omitempty"`
+			Expiration int    `json:"expiration,omitempty"`
+			Events     string `json:"events,omitempty"`
+			History    int    `json:"history,omitempty"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
@@ -4690,47 +4579,14 @@ func (s *server) AddUser() http.HandlerFunc {
 			return
 		}
 
-		log.Info().Interface("proxyConfig", user.ProxyConfig).Interface("s3Config", user.S3Config).Msg("Received values for proxyConfig and s3Config")
 		log.Debug().Interface("user", user).Msg("Received values for user")
 
 		// Set defaults only if nil
 		if user.Events == "" {
 			user.Events = ""
 		}
-		if user.ProxyConfig == nil {
-			user.ProxyConfig = &ProxyConfig{}
-		}
-		if user.S3Config == nil {
-			user.S3Config = &S3Config{}
-		}
 		if user.Webhook == "" {
 			user.Webhook = ""
-		}
-
-		// Encrypt HMAC key if provided
-		var encryptedHmacKey []byte
-		if user.HmacKey != "" {
-			// Validate HMAC key length
-			if len(user.HmacKey) < 32 {
-				s.respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
-					"code":    http.StatusBadRequest,
-					"error":   "HMAC key must be at least 32 characters long",
-					"success": false,
-				})
-				return
-			}
-
-			var err error
-			encryptedHmacKey, err = encryptHMACKey(user.HmacKey)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to encrypt HMAC key")
-				s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
-					"code":    http.StatusInternalServerError,
-					"error":   "failed to encrypt HMAC key",
-					"success": false,
-				})
-				return
-			}
 		}
 
 		// Check for existing user
@@ -4782,11 +4638,11 @@ func (s *server) AddUser() http.HandlerFunc {
 			return
 		}
 
-		// Insert user with all proxy, S3 and HMAC fields
+		// Insert user
 		if _, err = s.db.Exec(
-			"INSERT INTO users (id, name, token, webhook, expiration, events, jid, qrcode, proxy_url, s3_enabled, s3_endpoint, s3_region, s3_bucket, s3_access_key, s3_secret_key, s3_path_style, s3_public_url, media_delivery, s3_retention_days, hmac_key, history) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)",
-			id, user.Name, user.Token, user.Webhook, user.Expiration, user.Events, "", "", user.ProxyConfig.ProxyURL,
-			user.S3Config.Enabled, user.S3Config.Endpoint, user.S3Config.Region, user.S3Config.Bucket, user.S3Config.AccessKey, user.S3Config.SecretKey, user.S3Config.PathStyle, user.S3Config.PublicURL, user.S3Config.MediaDelivery, user.S3Config.RetentionDays, encryptedHmacKey, user.History,
+			"INSERT INTO users (id, name, token, webhook, expiration, events, jid, qrcode, history) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+			id, user.Name, user.Token, user.Webhook, user.Expiration, user.Events, "", "",
+			user.History,
 		); err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("admin DB error")
 			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -4797,49 +4653,14 @@ func (s *server) AddUser() http.HandlerFunc {
 			return
 		}
 
-		// Initialize S3Manager if necessary
-		if user.S3Config != nil && user.S3Config.Enabled {
-			s3Config := &S3Config{
-				Enabled:       user.S3Config.Enabled,
-				Endpoint:      user.S3Config.Endpoint,
-				Region:        user.S3Config.Region,
-				Bucket:        user.S3Config.Bucket,
-				AccessKey:     user.S3Config.AccessKey,
-				SecretKey:     user.S3Config.SecretKey,
-				PathStyle:     user.S3Config.PathStyle,
-				PublicURL:     user.S3Config.PublicURL,
-				MediaDelivery: user.S3Config.MediaDelivery,
-				RetentionDays: user.S3Config.RetentionDays,
-			}
-			_ = GetS3Manager().InitializeS3Client(id, s3Config)
-		}
-
 		// Build response like GET /admin/users
-		proxyConfig := map[string]interface{}{
-			"enabled":   user.ProxyConfig.Enabled,
-			"proxy_url": user.ProxyConfig.ProxyURL,
-		}
-		s3Config := map[string]interface{}{
-			"enabled":        user.S3Config.Enabled,
-			"endpoint":       user.S3Config.Endpoint,
-			"region":         user.S3Config.Region,
-			"bucket":         user.S3Config.Bucket,
-			"access_key":     "***",
-			"path_style":     user.S3Config.PathStyle,
-			"public_url":     user.S3Config.PublicURL,
-			"media_delivery": user.S3Config.MediaDelivery,
-			"retention_days": user.S3Config.RetentionDays,
-		}
 		userMap := map[string]interface{}{
-			"id":           id,
-			"name":         user.Name,
-			"token":        user.Token,
-			"webhook":      user.Webhook,
-			"expiration":   user.Expiration,
-			"events":       user.Events,
-			"proxy_config": proxyConfig,
-			"s3_config":    s3Config,
-			"hmac_key":     user.HmacKey != "",
+			"id":         id,
+			"name":       user.Name,
+			"token":      user.Token,
+			"webhook":    user.Webhook,
+			"expiration": user.Expiration,
+			"events":     user.Events,
 		}
 		s.respondWithJSON(w, http.StatusCreated, map[string]interface{}{
 			"code":    http.StatusCreated,
@@ -4854,25 +4675,18 @@ func (s *server) EditUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		type ProxyConfig struct {
-			Enabled  bool   `json:"enabled"`
-			ProxyURL string `json:"proxyURL"`
-		}
-
 		// Get the user ID from the request URL
 		vars := mux.Vars(r)
 		userID := vars["id"]
 
 		// Parse the request body
 		var user struct {
-			Name        string       `json:"name,omitempty"`
-			Token       string       `json:"token,omitempty"`
-			Webhook     string       `json:"webhook,omitempty"`
-			Expiration  int          `json:"expiration,omitempty"`
-			Events      string       `json:"events,omitempty"`
-			ProxyConfig *ProxyConfig `json:"proxyConfig,omitempty"`
-			S3Config    *S3Config    `json:"s3Config,omitempty"`
-			History     int          `json:"history,omitempty"`
+			Name       string `json:"name,omitempty"`
+			Token      string `json:"token,omitempty"`
+			Webhook    string `json:"webhook,omitempty"`
+			Expiration int    `json:"expiration,omitempty"`
+			Events     string `json:"events,omitempty"`
+			History    int    `json:"history,omitempty"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
@@ -4885,7 +4699,6 @@ func (s *server) EditUser() http.HandlerFunc {
 			return
 		}
 
-		log.Info().Interface("proxyConfig", user.ProxyConfig).Interface("s3Config", user.S3Config).Msg("Received values for proxyConfig and s3Config")
 		log.Debug().Interface("user", user).Msg("Received values for user")
 
 		// Check if user exists
@@ -4952,29 +4765,6 @@ func (s *server) EditUser() http.HandlerFunc {
 		addField("events", user.Events, user.Events != "")
 		addField("history", user.History, user.History != 0)
 
-		// Handle proxy config
-		if user.ProxyConfig != nil {
-			if user.ProxyConfig.Enabled {
-				addField("proxy_url", user.ProxyConfig.ProxyURL, true)
-			} else {
-				addField("proxy_url", "", true)
-			}
-		}
-
-		// Handle S3 config
-		if user.S3Config != nil {
-			addField("s3_enabled", user.S3Config.Enabled, true)
-			addField("s3_endpoint", user.S3Config.Endpoint, true)
-			addField("s3_region", user.S3Config.Region, true)
-			addField("s3_bucket", user.S3Config.Bucket, true)
-			addField("s3_access_key", user.S3Config.AccessKey, true)
-			addField("s3_secret_key", user.S3Config.SecretKey, true)
-			addField("s3_path_style", user.S3Config.PathStyle, true)
-			addField("s3_public_url", user.S3Config.PublicURL, true)
-			addField("media_delivery", user.S3Config.MediaDelivery, true)
-			addField("s3_retention_days", user.S3Config.RetentionDays, true)
-		}
-
 		// If no fields to update, return early
 		if argIndex == 1 {
 			s.respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -4998,28 +4788,6 @@ func (s *server) EditUser() http.HandlerFunc {
 				"success": false,
 			})
 			return
-		}
-
-		// Update S3Manager if S3 config was modified
-		if user.S3Config != nil {
-			if user.S3Config.Enabled {
-				s3Config := &S3Config{
-					Enabled:       user.S3Config.Enabled,
-					Endpoint:      user.S3Config.Endpoint,
-					Region:        user.S3Config.Region,
-					Bucket:        user.S3Config.Bucket,
-					AccessKey:     user.S3Config.AccessKey,
-					SecretKey:     user.S3Config.SecretKey,
-					PathStyle:     user.S3Config.PathStyle,
-					PublicURL:     user.S3Config.PublicURL,
-					MediaDelivery: user.S3Config.MediaDelivery,
-					RetentionDays: user.S3Config.RetentionDays,
-				}
-				_ = GetS3Manager().InitializeS3Client(userID, s3Config)
-			} else {
-				// Remove S3 client if disabled
-				GetS3Manager().RemoveClient(userID)
-			}
 		}
 
 		// Update userinfo cache for any modified fields
@@ -5052,13 +4820,6 @@ func (s *server) EditUser() http.HandlerFunc {
 				}
 				if user.History != 0 {
 					updatedUserInfo = updateUserInfo(updatedUserInfo, "History", strconv.Itoa(user.History)).(Values)
-				}
-				if user.ProxyConfig != nil {
-					if user.ProxyConfig.Enabled {
-						updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", user.ProxyConfig.ProxyURL).(Values)
-					} else {
-						updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", "").(Values)
-					}
 				}
 
 				// Update the cache
@@ -5198,7 +4959,7 @@ func (s *server) DeleteUserComplete() http.HandlerFunc {
 		clientManager.DeleteHTTPClient(id)
 		userinfocache.Delete(token)
 
-		// 4. Remove media files
+		// 4. Remove media files from local directories
 		userDirectory := filepath.Join(s.exPath, "files", id)
 		if stat, err := os.Stat(userDirectory); err == nil && stat.IsDir() {
 			log.Info().Str("dir", userDirectory).Msg("deleting media and history files from disk")
@@ -5208,18 +4969,9 @@ func (s *server) DeleteUserComplete() http.HandlerFunc {
 			}
 		}
 
-		// 5. Remove files from S3 (if enabled)
-		var s3Enabled bool
-		err = s.db.QueryRow("SELECT s3_enabled FROM users WHERE id = $1", id).Scan(&s3Enabled)
-		if err == nil && s3Enabled {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			errS3 := GetS3Manager().DeleteAllUserObjects(ctx, id)
-			if errS3 != nil {
-				log.Error().Err(errS3).Str("id", id).Msg("error removing user files from S3")
-			} else {
-				log.Info().Str("id", id).Msg("user files from S3 removed successfully")
-			}
+		// 5. Remove files from media storage
+		if err := GetFileManager().DeleteUserFiles(id); err != nil {
+			log.Error().Err(err).Str("id", id).Msg("error removing user files from media storage")
 		}
 
 		log.Info().Str("id", id).Str("name", uname).Str("jid", jid).Msg("user deleted successfully")
@@ -5351,395 +5103,6 @@ func (s *server) SetHistory() http.HandlerFunc {
 	}
 }
 
-// Set proxy
-func (s *server) SetProxy() http.HandlerFunc {
-	type proxyStruct struct {
-		ProxyURL string `json:"proxy_url"` // Format: "socks5://user:pass@host:port" or "http://host:port"
-		Enable   bool   `json:"enable"`    // Whether to enable or disable proxy
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		// Check if client exists and is connected
-
-		if clientManager.GetWhatsmeowClient(txtid) != nil && clientManager.GetWhatsmeowClient(txtid).IsConnected() {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("cannot set proxy while connected. Please disconnect first"))
-			return
-		}
-
-		decoder := json.NewDecoder(r.Body)
-		var t proxyStruct
-		err := decoder.Decode(&t)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		// If enable is false, remove proxy configuration
-		if !t.Enable {
-			_, err = s.db.Exec("UPDATE users SET proxy_url = '' WHERE id = $1", txtid)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to remove proxy configuration"))
-				return
-			}
-
-			token := r.Context().Value("userinfo").(Values).Get("Token")
-			if cachedUserInfo, found := userinfocache.Get(token); found {
-				updatedUserInfo := cachedUserInfo.(Values)
-				// Update proxy in cache
-				updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", "").(Values)
-				userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
-				log.Info().Str("userID", txtid).Msg("User info cache updated with Proxy configuration")
-			}
-
-			response := map[string]interface{}{"Details": "Proxy disabled successfully"}
-			responseJson, err := json.Marshal(response)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, err)
-			} else {
-				s.Respond(w, r, http.StatusOK, string(responseJson))
-			}
-			return
-		}
-
-		// Validate proxy URL
-		if t.ProxyURL == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("missing proxy_url in payload"))
-			return
-		}
-
-		proxyURL, err := url.Parse(t.ProxyURL)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("invalid proxy URL format"))
-			return
-		}
-
-		// Only allow http and socks5 proxies
-		if proxyURL.Scheme != "http" && proxyURL.Scheme != "socks5" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("only HTTP and SOCKS5 proxies are supported"))
-			return
-		}
-
-		// Store proxy configuration in database
-		_, err = s.db.Exec("UPDATE users SET proxy_url = $1 WHERE id = $2", t.ProxyURL, txtid)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to save proxy configuration"))
-			return
-		}
-
-		token := r.Context().Value("userinfo").(Values).Get("Token")
-		if cachedUserInfo, found := userinfocache.Get(token); found {
-			updatedUserInfo := cachedUserInfo.(Values)
-			// Update proxy in cache
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", t.ProxyURL).(Values)
-			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
-			log.Info().Str("userID", txtid).Msg("User info cache updated with Proxy configuration")
-		}
-
-		response := map[string]interface{}{
-			"Details":  "Proxy configured successfully",
-			"ProxyURL": t.ProxyURL,
-		}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// Configure S3
-func (s *server) ConfigureS3() http.HandlerFunc {
-	type s3ConfigStruct struct {
-		Enabled       bool   `json:"enabled"`
-		Endpoint      string `json:"endpoint"`
-		Region        string `json:"region"`
-		Bucket        string `json:"bucket"`
-		AccessKey     string `json:"access_key"`
-		SecretKey     string `json:"secret_key"`
-		PathStyle     bool   `json:"path_style"`
-		PublicURL     string `json:"public_url"`
-		MediaDelivery string `json:"media_delivery"`
-		RetentionDays int    `json:"retention_days"`
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		decoder := json.NewDecoder(r.Body)
-		var t s3ConfigStruct
-		err := decoder.Decode(&t)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		// Validate media_delivery
-		if t.MediaDelivery != "" && t.MediaDelivery != "base64" && t.MediaDelivery != "s3" && t.MediaDelivery != "both" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("media_delivery must be 'base64', 's3', or 'both'"))
-			return
-		}
-
-		if t.MediaDelivery == "" {
-			t.MediaDelivery = "base64"
-		}
-
-		// Update database
-		_, err = s.db.Exec(`
-			UPDATE users SET 
-				s3_enabled = $1,
-				s3_endpoint = $2,
-				s3_region = $3,
-				s3_bucket = $4,
-				s3_access_key = $5,
-				s3_secret_key = $6,
-				s3_path_style = $7,
-				s3_public_url = $8,
-				media_delivery = $9,
-				s3_retention_days = $10
-			WHERE id = $11`,
-			t.Enabled, t.Endpoint, t.Region, t.Bucket, t.AccessKey, t.SecretKey,
-			t.PathStyle, t.PublicURL, t.MediaDelivery, t.RetentionDays, txtid)
-
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to save S3 configuration"))
-			return
-		}
-
-		// Initialize S3 client if enabled
-		if t.Enabled {
-			s3Config := &S3Config{
-				Enabled:       t.Enabled,
-				Endpoint:      t.Endpoint,
-				Region:        t.Region,
-				Bucket:        t.Bucket,
-				AccessKey:     t.AccessKey,
-				SecretKey:     t.SecretKey,
-				PathStyle:     t.PathStyle,
-				PublicURL:     t.PublicURL,
-				RetentionDays: t.RetentionDays,
-			}
-
-			err = GetS3Manager().InitializeS3Client(txtid, s3Config)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to initialize S3 client: %v", err)))
-				return
-			}
-		} else {
-			GetS3Manager().RemoveClient(txtid)
-		}
-
-		// Update userinfocache with S3 configuration
-		token := r.Context().Value("userinfo").(Values).Get("Token")
-		if cachedUserInfo, found := userinfocache.Get(token); found {
-			updatedUserInfo := cachedUserInfo.(Values)
-
-			// Update S3-related fields in cache
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Enabled", strconv.FormatBool(t.Enabled)).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Endpoint", t.Endpoint).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Region", t.Region).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Bucket", t.Bucket).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3AccessKey", t.AccessKey).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3SecretKey", t.SecretKey).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3PathStyle", strconv.FormatBool(t.PathStyle)).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3PublicURL", t.PublicURL).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "MediaDelivery", t.MediaDelivery).(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3RetentionDays", strconv.Itoa(t.RetentionDays)).(Values)
-
-			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
-			log.Info().Str("userID", txtid).Msg("User info cache updated with S3 configuration")
-		}
-
-		response := map[string]interface{}{
-			"Details": "S3 configuration saved successfully",
-			"Enabled": t.Enabled,
-		}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// Get S3 Configuration
-func (s *server) GetS3Config() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		var config struct {
-			Enabled       bool   `json:"enabled" db:"enabled"`
-			Endpoint      string `json:"endpoint" db:"endpoint"`
-			Region        string `json:"region" db:"region"`
-			Bucket        string `json:"bucket" db:"bucket"`
-			AccessKey     string `json:"access_key" db:"access_key"`
-			PathStyle     bool   `json:"path_style" db:"path_style"`
-			PublicURL     string `json:"public_url" db:"public_url"`
-			MediaDelivery string `json:"media_delivery" db:"media_delivery"`
-			RetentionDays int    `json:"retention_days" db:"retention_days"`
-		}
-
-		err := s.db.Get(&config, `
-			SELECT 
-				s3_enabled as enabled,
-				s3_endpoint as endpoint,
-				s3_region as region,
-				s3_bucket as bucket,
-				s3_access_key as access_key,
-				s3_path_style as path_style,
-				s3_public_url as public_url,
-				media_delivery,
-				s3_retention_days as retention_days
-			FROM users WHERE id = $1`, txtid)
-
-		if err != nil {
-			log.Error().Err(err).Str("userID", txtid).Msg("Failed to get S3 configuration from database")
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to get S3 configuration"))
-			return
-		}
-
-		log.Debug().Str("userID", txtid).Bool("enabled", config.Enabled).Str("endpoint", config.Endpoint).Str("bucket", config.Bucket).Msg("Retrieved S3 configuration from database")
-
-		// Don't return secret key for security
-		config.AccessKey = "***" // Mask access key
-
-		responseJson, err := json.Marshal(config)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// Test S3 Connection
-func (s *server) TestS3Connection() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		// Get S3 config from database
-		var config struct {
-			Enabled       bool   `db:"enabled"`
-			Endpoint      string `db:"endpoint"`
-			Region        string `db:"region"`
-			Bucket        string `db:"bucket"`
-			AccessKey     string `db:"access_key"`
-			SecretKey     string `db:"secret_key"`
-			PathStyle     bool   `db:"path_style"`
-			PublicURL     string `db:"public_url"`
-			RetentionDays int    `db:"retention_days"`
-		}
-
-		err := s.db.Get(&config, `
-			SELECT 
-				s3_enabled as enabled,
-				s3_endpoint as endpoint,
-				s3_region as region,
-				s3_bucket as bucket,
-				s3_access_key as access_key,
-				s3_secret_key as secret_key,
-				s3_path_style as path_style,
-				s3_public_url as public_url,
-				s3_retention_days as retention_days
-			FROM users WHERE id = $1`, txtid)
-
-		if err != nil {
-			log.Error().Err(err).Str("userID", txtid).Msg("Failed to get S3 configuration from database for test connection")
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to get S3 configuration"))
-			return
-		}
-
-		log.Debug().Str("userID", txtid).Bool("enabled", config.Enabled).Str("endpoint", config.Endpoint).Str("bucket", config.Bucket).Msg("Retrieved S3 configuration from database for test connection")
-
-		if !config.Enabled {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("S3 is not enabled for this user"))
-			return
-		}
-
-		// Initialize S3 client
-		s3Config := &S3Config{
-			Enabled:       config.Enabled,
-			Endpoint:      config.Endpoint,
-			Region:        config.Region,
-			Bucket:        config.Bucket,
-			AccessKey:     config.AccessKey,
-			SecretKey:     config.SecretKey,
-			PathStyle:     config.PathStyle,
-			PublicURL:     config.PublicURL,
-			RetentionDays: config.RetentionDays,
-		}
-
-		err = GetS3Manager().InitializeS3Client(txtid, s3Config)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to initialize S3 client: %v", err)))
-			return
-		}
-
-		// Test connection
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		err = GetS3Manager().TestConnection(ctx, txtid)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("S3 connection test failed: %v", err)))
-			return
-		}
-
-		response := map[string]interface{}{
-			"Details": "S3 connection test successful",
-			"Bucket":  config.Bucket,
-			"Region":  config.Region,
-		}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// Delete S3 Configuration
-func (s *server) DeleteS3Config() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		// Update database to remove S3 configuration
-		_, err := s.db.Exec(`
-			UPDATE users SET 
-				s3_enabled = false,
-				s3_endpoint = '',
-				s3_region = '',
-				s3_bucket = '',
-				s3_access_key = '',
-				s3_secret_key = '',
-				s3_path_style = true,
-				s3_public_url = '',
-				media_delivery = 'base64',
-				s3_retention_days = 30
-			WHERE id = $1`, txtid)
-
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to delete S3 configuration"))
-			return
-		}
-
-		// Remove S3 client
-		GetS3Manager().RemoveClient(txtid)
-
-		response := map[string]interface{}{"Details": "S3 configuration deleted successfully"}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
 // Get chat history
 func (s *server) GetHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -5784,20 +5147,11 @@ func (s *server) GetHistory() http.HandlerFunc {
 
 		// If chat_jid is "index", return mapping of all instances to their chat_jids
 		if chatJID == "index" {
-			var query string
-			if s.db.DriverName() == "postgres" {
-				query = `
-					SELECT user_id, chat_jid, MAX(timestamp) as last_message_time
-					FROM message_history 
-					GROUP BY user_id, chat_jid 
-					ORDER BY user_id, last_message_time DESC`
-			} else { // sqlite
-				query = `
-					SELECT user_id, chat_jid, MAX(timestamp) as last_message_time
-					FROM message_history 
-					GROUP BY user_id, chat_jid 
-					ORDER BY user_id, last_message_time DESC`
-			}
+			query := `
+				SELECT user_id, chat_jid, MAX(timestamp) as last_message_time
+				FROM message_history
+				GROUP BY user_id, chat_jid
+				ORDER BY user_id, last_message_time DESC`
 
 			type ChatMapping struct {
 				UserID          string `json:"user_id" db:"user_id"`
@@ -5858,22 +5212,12 @@ func (s *server) GetHistory() http.HandlerFunc {
 			}
 		}
 
-		var query string
-		if s.db.DriverName() == "postgres" {
-			query = `
-                SELECT id, user_id, chat_jid, sender_jid, message_id, timestamp, message_type, text_content, media_link, COALESCE(quoted_message_id, '') as quoted_message_id, COALESCE(datajson, '') as datajson
-                FROM message_history
-                WHERE user_id = $1 AND chat_jid = $2
-                ORDER BY timestamp DESC
-                LIMIT $3`
-		} else { // sqlite
-			query = `
-                SELECT id, user_id, chat_jid, sender_jid, message_id, timestamp, message_type, text_content, media_link, COALESCE(quoted_message_id, '') as quoted_message_id, COALESCE(datajson, '') as datajson
-                FROM message_history
-                WHERE user_id = ? AND chat_jid = ?
-                ORDER BY timestamp DESC
-                LIMIT ?`
-		}
+		query := `
+			SELECT id, user_id, chat_jid, sender_jid, message_id, timestamp, message_type, text_content, media_link, COALESCE(quoted_message_id, '') as quoted_message_id, COALESCE(datajson, '') as datajson
+			FROM message_history
+			WHERE user_id = ? AND chat_jid = ?
+			ORDER BY timestamp DESC
+			LIMIT ?`
 
 		var messages []HistoryMessage
 		err := s.db.Select(&messages, query, txtid, chatJID, limit)
@@ -5896,22 +5240,12 @@ func (s *server) syncHistoryForChat(ctx context.Context, userID string, chatJID 
 	chatJIDStr := chatJID.String()
 
 	// Try to get last message info for this chat from database
-	var query string
-	if s.db.DriverName() == "postgres" {
-		query = `
-			SELECT message_id, chat_jid, sender_jid
-			FROM message_history
-			WHERE user_id = $1 AND chat_jid = $2
-			ORDER BY timestamp DESC
-			LIMIT 1`
-	} else {
-		query = `
-			SELECT message_id, chat_jid, sender_jid
-			FROM message_history
-			WHERE user_id = ? AND chat_jid = ?
-			ORDER BY timestamp DESC
-			LIMIT 1`
-	}
+	query := `
+		SELECT message_id, chat_jid, sender_jid
+		FROM message_history
+		WHERE user_id = ? AND chat_jid = ?
+		ORDER BY timestamp DESC
+		LIMIT 1`
 
 	var lastMsg struct {
 		MessageID string `db:"message_id"`
@@ -6007,131 +5341,6 @@ func (s *server) saveOutgoingMessageToHistory(userID, chatJID, messageID, messag
 				log.Error().Err(err).Msg("Failed to trim message history")
 			}
 		}
-	}
-}
-
-// Configure HMAC
-func (s *server) ConfigureHmac() http.HandlerFunc {
-	type hmacConfigStruct struct {
-		HmacKey string `json:"hmac_key"`
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
-
-		decoder := json.NewDecoder(r.Body)
-		var t hmacConfigStruct
-		err := decoder.Decode(&t)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		// Validate HMAC key (minimum 32 characters for security)
-		if len(t.HmacKey) < 32 {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("HMAC key must be at least 32 characters long"))
-			return
-		}
-
-		// Encrypt HMAC key before storing
-		encryptedHmacKey, err := encryptHMACKey(t.HmacKey)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to encrypt HMAC key")
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to encrypt HMAC key"))
-			return
-		}
-
-		// Update database with ENCRYPTED key
-		_, err = s.db.Exec(`
-            UPDATE users SET hmac_key = $1 WHERE id = $2`,
-			encryptedHmacKey, txtid)
-
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to save HMAC configuration"))
-			return
-		}
-
-		if cachedUserInfo, found := userinfocache.Get(token); found {
-			updatedUserInfo := cachedUserInfo.(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "HasHmac", "true").(Values)
-			hmacKeyEncrypted := base64.StdEncoding.EncodeToString(encryptedHmacKey)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "HmacKeyEncrypted", hmacKeyEncrypted).(Values)
-			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
-			log.Info().Str("userID", txtid).Msg("User info cache updated with HMAC configuration")
-		}
-
-		response := map[string]interface{}{
-			"Details": "HMAC configuration saved successfully",
-		}
-		s.respondWithJSON(w, http.StatusOK, response)
-	}
-}
-
-// Get HMAC Configuration
-func (s *server) GetHmacConfig() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		var hmacKey []byte
-		err := s.db.QueryRow(`SELECT hmac_key FROM users WHERE id = $1`, txtid).Scan(&hmacKey)
-
-		if err != nil {
-			if err == sql.ErrNoRows {
-				s.respondWithJSON(w, http.StatusOK, map[string]interface{}{
-					"hmac_key": "",
-				})
-				return
-			}
-
-			log.Error().Err(err).Str("userID", txtid).Msg("Failed to get HMAC configuration from database")
-			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "failed to get HMAC configuration",
-			})
-			return
-		}
-
-		log.Debug().Str("userID", txtid).Bool("hasKey", len(hmacKey) > 0).Msg("Retrieved HMAC configuration from database")
-
-		response := map[string]interface{}{
-			"hmac_key": "",
-		}
-
-		if len(hmacKey) > 0 {
-			response["hmac_key"] = "***" // Mask HMAC key
-		}
-
-		s.respondWithJSON(w, http.StatusOK, response)
-	}
-}
-
-// Delete HMAC Configuration
-func (s *server) DeleteHmacConfig() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token") // ← Pegar o token
-
-		// Clear HMAC key
-		_, err := s.db.Exec(`UPDATE users SET hmac_key = NULL WHERE id = $1`, txtid)
-
-		if err != nil {
-			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "failed to delete HMAC configuration",
-			})
-			return
-		}
-
-		if cachedUserInfo, found := userinfocache.Get(token); found {
-			updatedUserInfo := cachedUserInfo.(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "HasHmac", "false").(Values)
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "HmacKeyEncrypted", "").(Values)
-			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
-			log.Info().Str("userID", txtid).Msg("User info cache updated - HMAC configuration removed")
-		}
-
-		s.respondWithJSON(w, http.StatusOK, map[string]interface{}{
-			"Details": "HMAC configuration deleted successfully",
-		})
 	}
 }
 

@@ -3,13 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -36,7 +30,6 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/jmoiron/sqlx"
 	"github.com/nfnt/resize"
 	"github.com/rs/zerolog/log"
 	"github.com/vincent-petithory/dataurl"
@@ -68,24 +61,6 @@ const (
 	vp8xFlagEXIF byte = 0x08
 )
 
-type WebhookFileErrorPayload struct {
-	URL              string                 `json:"url"`
-	Payload          map[string]interface{} `json:"payload"`
-	UserID           string                 `json:"userID"`
-	EncryptedHmacKey string                 `json:"encryptedHmacKey"`
-	FilePath         string                 `json:"filePath"`
-	AttemptTime      time.Time              `json:"attemptTime"`
-	ErrorMessage     string                 `json:"errorMessage"`
-}
-
-type WebhookErrorPayload struct {
-	URL              string                 `json:"url"`
-	Payload          map[string]interface{} `json:"payload"`
-	UserID           string                 `json:"userID"`
-	EncryptedHmacKey string                 `json:"encryptedHmacKey"`
-	AttemptTime      time.Time              `json:"attemptTime"`
-	ErrorMessage     string                 `json:"errorMessage"`
-}
 type openGraphResult struct {
 	Title       string
 	Description string
@@ -236,11 +211,6 @@ func updateUserInfo(values interface{}, field string, value string) interface{} 
 
 // webhook for regular messages
 func callHook(myurl string, payload map[string]string, userID string) {
-	callHookWithHmac(myurl, payload, userID, nil)
-}
-
-// webhook for regular messages with HMAC
-func callHookWithHmac(myurl string, payload map[string]string, userID string, encryptedHmacKey []byte) {
 	log.Info().Str("url", myurl).Str("userID", userID).Msg("Sending POST to client with retry logic")
 
 	client := clientManager.GetHTTPClient(userID)
@@ -273,14 +243,10 @@ func callHookWithHmac(myurl string, payload map[string]string, userID string, en
 		}
 
 		var req *resty.Request
-		var hmacSignature string
-		var marshalErr error
 
 		format := os.Getenv("WEBHOOK_FORMAT")
 
 		if format == "json" {
-			var jsonBody []byte
-
 			if jsonStr, ok := payload["jsonData"]; ok {
 				var postmap map[string]interface{}
 
@@ -293,43 +259,11 @@ func callHookWithHmac(myurl string, payload map[string]string, userID string, en
 				}
 			}
 
-			// Marshal body to JSON for HMAC signature
-			jsonBody, marshalErr = json.Marshal(body)
-			if marshalErr != nil {
-				log.Error().Err(marshalErr).Msg("Failed to marshal body for HMAC")
-			}
-
-			// Generate HMAC signature if key exists
-			if len(encryptedHmacKey) > 0 && len(jsonBody) > 0 {
-				var err error
-				hmacSignature, err = generateHmacSignature(jsonBody, encryptedHmacKey)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to generate HMAC signature")
-				}
-			}
-
 			req = client.R().SetHeader("Content-Type", "application/json").SetBody(body)
 
 		} else {
-
-			if len(encryptedHmacKey) > 0 {
-				formData := url.Values{}
-				for k, v := range payload {
-					formData.Add(k, v)
-				}
-				formString := formData.Encode()
-				var err error
-				hmacSignature, err = generateHmacSignature([]byte(formString), encryptedHmacKey)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to generate HMAC signature")
-				}
-			}
 			req = client.R().SetFormData(payload)
 			body = payload
-		}
-
-		if hmacSignature != "" {
-			req.SetHeader("x-hmac-signature", hmacSignature)
 		}
 
 		resp, postErr := req.Post(myurl)
@@ -360,39 +294,12 @@ func callHookWithHmac(myurl string, payload map[string]string, userID string, en
 	}
 
 	if lastError != nil {
-		log.Error().Str("url", myurl).Msg("Webhook permanently failed after all retries. Sending to error queue...")
-
-		errorPayloadMap := make(map[string]interface{})
-		if p, ok := body.(map[string]string); ok {
-
-			for k, v := range p {
-				errorPayloadMap[k] = v
-			}
-		} else if p, ok := body.(map[string]interface{}); ok {
-
-			errorPayloadMap = p
-		}
-
-		errorPayload := WebhookErrorPayload{
-			URL:              myurl,
-			Payload:          errorPayloadMap,
-			UserID:           userID,
-			EncryptedHmacKey: hex.EncodeToString(encryptedHmacKey),
-			AttemptTime:      time.Now(),
-			ErrorMessage:     lastError.Error(),
-		}
-
-		PublishDataErrorToQueue(errorPayload)
+		log.Error().Str("url", myurl).Err(lastError).Msg("Webhook permanently failed after all retries")
 	}
 }
 
 // webhook for messages with file attachments
 func callHookFile(myurl string, payload map[string]string, userID string, file string) error {
-	return callHookFileWithHmac(myurl, payload, userID, file, nil)
-}
-
-// webhook for messages with file attachments and HMAC
-func callHookFileWithHmac(myurl string, payload map[string]string, userID string, file string, encryptedHmacKey []byte) error {
 	log.Info().Str("file", file).Str("url", myurl).Msg("Sending POST with retry logic")
 
 	client := clientManager.GetHTTPClient(userID)
@@ -410,7 +317,7 @@ func callHookFileWithHmac(myurl string, payload map[string]string, userID string
 	}
 	finalPayload["file"] = file
 
-	// 2. Loop Retry
+	// Retry loop
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
 			backoffFactor := 1 << uint(attempt-1)
@@ -426,31 +333,11 @@ func callHookFileWithHmac(myurl string, payload map[string]string, userID string
 			time.Sleep(delayDuration)
 		}
 
-		var hmacSignature string
-		var jsonPayload []byte
-
-		if len(encryptedHmacKey) > 0 {
-			var err error
-			jsonPayload, err = json.Marshal(finalPayload)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to marshal payload for HMAC")
-			} else {
-				hmacSignature, err = generateHmacSignature(jsonPayload, encryptedHmacKey)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to generate HMAC signature")
-				}
-			}
-		}
-
 		req := client.R().
 			SetFiles(map[string]string{
 				"file": file,
 			}).
 			SetFormData(finalPayload)
-
-		if hmacSignature != "" {
-			req.SetHeader("x-hmac-signature", hmacSignature)
-		}
 
 		resp, postErr := req.Post(myurl)
 
@@ -480,25 +367,7 @@ func callHookFileWithHmac(myurl string, payload map[string]string, userID string
 	}
 
 	if lastError != nil {
-		log.Error().Str("url", myurl).Msg("File webhook permanently failed after all retries. Sending to error queue...")
-
-		errorPayloadMap := make(map[string]interface{})
-		for k, v := range finalPayload {
-			errorPayloadMap[k] = v
-		}
-
-		errorPayload := WebhookFileErrorPayload{
-			URL:              myurl,
-			Payload:          errorPayloadMap,
-			UserID:           userID,
-			EncryptedHmacKey: hex.EncodeToString(encryptedHmacKey),
-			FilePath:         file,
-			AttemptTime:      time.Now(),
-			ErrorMessage:     lastError.Error(),
-		}
-
-		PublishFileErrorToQueue(errorPayload)
-
+		log.Error().Str("url", myurl).Err(lastError).Msg("File webhook permanently failed after all retries")
 		return fmt.Errorf("webhook failed permanently: %w", lastError)
 	}
 
@@ -522,115 +391,24 @@ func (s *server) respondWithJSON(w http.ResponseWriter, statusCode int, payload 
 	}
 }
 
-// ProcessOutgoingMedia handles media processing for outgoing messages with S3 support
-func ProcessOutgoingMedia(userID string, contactJID string, messageID string, data []byte, mimeType string, fileName string, db *sqlx.DB) (map[string]interface{}, error) {
-	// Check if S3 is enabled for this user
-	var s3Config struct {
-		Enabled       bool   `db:"s3_enabled"`
-		MediaDelivery string `db:"media_delivery"`
-	}
-	err := db.Get(&s3Config, "SELECT s3_enabled, media_delivery FROM users WHERE id = $1", userID)
+// ProcessOutgoingMedia handles media processing for outgoing messages
+func ProcessOutgoingMedia(userID string, contactJID string, messageID string, data []byte, mimeType string, fileName string) (map[string]interface{}, error) {
+	// Save file to disk (outgoing messages are always in outbox)
+	fileData, err := GetFileManager().SaveFile(
+		userID,
+		contactJID,
+		messageID,
+		data,
+		mimeType,
+		fileName,
+		false, // isIncoming = false for sent messages
+	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get S3 config")
-		s3Config.Enabled = false
-		s3Config.MediaDelivery = "base64"
+		log.Error().Err(err).Msg("Failed to save media to disk")
+		return nil, err
 	}
 
-	// Process S3 upload if enabled
-	if s3Config.Enabled && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
-		// Process S3 upload (outgoing messages are always in outbox)
-		s3Data, err := GetS3Manager().ProcessMediaForS3(
-			context.Background(),
-			userID,
-			contactJID,
-			messageID,
-			data,
-			mimeType,
-			fileName,
-			false, // isIncoming = false for sent messages
-		)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to upload media to S3")
-			// Continue even if S3 upload fails
-		} else {
-			return s3Data, nil
-		}
-	}
-
-	return nil, nil
-}
-
-// generateHmacSignature generates HMAC-SHA256 signature for webhook payload
-func generateHmacSignature(payload []byte, encryptedHmacKey []byte) (string, error) {
-	if len(encryptedHmacKey) == 0 {
-		return "", nil
-	}
-
-	// Decrypt HMAC key
-	hmacKey, err := decryptHMACKey(encryptedHmacKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt HMAC key: %w", err)
-	}
-
-	// Generate HMAC
-	h := hmac.New(sha256.New, []byte(hmacKey))
-	h.Write(payload)
-
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func encryptHMACKey(plainText string) ([]byte, error) {
-	if *globalEncryptionKey == "" {
-		return nil, fmt.Errorf("encryption key not configured")
-	}
-
-	block, err := aes.NewCipher([]byte(*globalEncryptionKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, []byte(plainText), nil)
-	return ciphertext, nil
-}
-
-// decryptHMACKey decrypts HMAC key using AES-GCM
-func decryptHMACKey(encryptedData []byte) (string, error) {
-	if *globalEncryptionKey == "" {
-		return "", fmt.Errorf("encryption key not configured")
-	}
-
-	block, err := aes.NewCipher([]byte(*globalEncryptionKey))
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(encryptedData) < nonceSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	nonce, ciphertext := encryptedData[:nonceSize], encryptedData[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt: %w", err)
-	}
-
-	return string(plaintext), nil
+	return fileData, nil
 }
 
 func extractFirstURL(text string) string {

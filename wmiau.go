@@ -7,11 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"mime"
 	"net/http"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +26,6 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"golang.org/x/net/proxy"
 )
 
 // db field declaration as *sqlx.DB
@@ -60,16 +56,11 @@ func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
 			"userID":       userID,
 			"instanceName": instance_name,
 		}
-		callHookWithHmac(*globalWebhook, globalData, userID, globalHMACKeyEncrypted)
+		callHook(*globalWebhook, globalData, userID)
 	}
 }
 
 func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID string, token string) {
-	sendToUserWebHookWithHmac(webhookurl, path, jsonData, userID, token, nil)
-}
-
-func sendToUserWebHookWithHmac(webhookurl string, path string, jsonData []byte, userID string, token string, encryptedHmacKey []byte) {
-
 	instance_name := ""
 	userinfo, found := userinfocache.Get(token)
 	if found {
@@ -87,12 +78,12 @@ func sendToUserWebHookWithHmac(webhookurl string, path string, jsonData []byte, 
 		log.Info().Str("url", webhookurl).Msg("Calling user webhook")
 
 		if path == "" {
-			go callHookWithHmac(webhookurl, data, userID, encryptedHmacKey)
+			go callHook(webhookurl, data, userID)
 		} else {
 			// Create a channel to capture the error from the goroutine
 			errChan := make(chan error, 1)
 			go func() {
-				err := callHookFileWithHmac(webhookurl, data, userID, path, encryptedHmacKey)
+				err := callHookFile(webhookurl, data, userID, path)
 				errChan <- err
 			}()
 
@@ -192,25 +183,10 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 		return
 	}
 
-	// Get HMAC key for this user
-	var encryptedHmacKey []byte
-	if userinfo, found := userinfocache.Get(mycli.token); found {
-		encryptedB64 := userinfo.(Values).Get("HmacKeyEncrypted")
-		if encryptedB64 != "" {
-			var err error
-			encryptedHmacKey, err = base64.StdEncoding.DecodeString(encryptedB64)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to decode HMAC key from cache")
-			}
-		}
-	}
-
-	sendToUserWebHookWithHmac(webhookurl, path, jsonData, mycli.userID, mycli.token, encryptedHmacKey)
+	sendToUserWebHook(webhookurl, path, jsonData, mycli.userID, mycli.token)
 
 	// Get global webhook if configured
 	go sendToGlobalWebHook(jsonData, mycli.token, mycli.userID)
-
-	go sendToGlobalRabbit(jsonData, mycli.token, mycli.userID)
 }
 
 func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
@@ -227,7 +203,7 @@ func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userI
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *server) connectOnStartup() {
-	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,proxy_url,CASE WHEN s3_enabled THEN 'true' ELSE 'false' END AS s3_enabled,media_delivery,COALESCE(history, 0) as history,hmac_key FROM users WHERE connected=1")
+	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,COALESCE(history, 0) as history FROM users WHERE connected=1")
 	if err != nil {
 		log.Error().Err(err).Msg("DB Problem")
 		return
@@ -240,34 +216,21 @@ func (s *server) connectOnStartup() {
 		name := ""
 		webhook := ""
 		events := ""
-		proxy_url := ""
-		s3_enabled := ""
-		media_delivery := ""
 		var history int
-		var hmac_key []byte
-		err = rows.Scan(&txtid, &name, &token, &jid, &webhook, &events, &proxy_url, &s3_enabled, &media_delivery, &history, &hmac_key)
+		err = rows.Scan(&txtid, &name, &token, &jid, &webhook, &events, &history)
 		if err != nil {
 			log.Error().Err(err).Msg("DB Problem")
 			return
 		} else {
-			hmacKeyEncrypted := ""
-			if len(hmac_key) > 0 {
-				hmacKeyEncrypted = base64.StdEncoding.EncodeToString(hmac_key)
-			}
-
 			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
 			v := Values{map[string]string{
-				"Id":               txtid,
-				"Name":             name,
-				"Jid":              jid,
-				"Webhook":          webhook,
-				"Token":            token,
-				"Proxy":            proxy_url,
-				"Events":           events,
-				"S3Enabled":        s3_enabled,
-				"MediaDelivery":    media_delivery,
-				"History":          fmt.Sprintf("%d", history),
-				"HmacKeyEncrypted": hmacKeyEncrypted,
+				"Id":      txtid,
+				"Name":    name,
+				"Jid":     jid,
+				"Webhook": webhook,
+				"Token":   token,
+				"Events":  events,
+				"History": fmt.Sprintf("%d", history),
 			}}
 			userinfocache.Set(token, v, cache.NoExpiration)
 			// Gets and set subscription to webhook events
@@ -292,53 +255,6 @@ func (s *server) connectOnStartup() {
 			log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
 			killchannel[txtid] = make(chan bool, 1)
 			go s.startClient(txtid, jid, token, subscribedEvents)
-
-			// Initialize S3 client if configured
-			go func(userID string) {
-				var s3Config struct {
-					Enabled       bool   `db:"s3_enabled"`
-					Endpoint      string `db:"s3_endpoint"`
-					Region        string `db:"s3_region"`
-					Bucket        string `db:"s3_bucket"`
-					AccessKey     string `db:"s3_access_key"`
-					SecretKey     string `db:"s3_secret_key"`
-					PathStyle     bool   `db:"s3_path_style"`
-					PublicURL     string `db:"s3_public_url"`
-					RetentionDays int    `db:"s3_retention_days"`
-				}
-
-				err := s.db.Get(&s3Config, `
-					SELECT s3_enabled, s3_endpoint, s3_region, s3_bucket, 
-						   s3_access_key, s3_secret_key, s3_path_style, 
-						   s3_public_url, s3_retention_days
-					FROM users WHERE id = $1`, userID)
-
-				if err != nil {
-					log.Error().Err(err).Str("userID", userID).Msg("Failed to get S3 config")
-					return
-				}
-
-				if s3Config.Enabled {
-					config := &S3Config{
-						Enabled:       s3Config.Enabled,
-						Endpoint:      s3Config.Endpoint,
-						Region:        s3Config.Region,
-						Bucket:        s3Config.Bucket,
-						AccessKey:     s3Config.AccessKey,
-						SecretKey:     s3Config.SecretKey,
-						PathStyle:     s3Config.PathStyle,
-						PublicURL:     s3Config.PublicURL,
-						RetentionDays: s3Config.RetentionDays,
-					}
-
-					err = GetS3Manager().InitializeS3Client(userID, config)
-					if err != nil {
-						log.Error().Err(err).Str("userID", userID).Msg("Failed to initialize S3 client on startup")
-					} else {
-						log.Info().Str("userID", userID).Msg("S3 client initialized on startup")
-					}
-				}
-			}(txtid)
 		}
 	}
 	err = rows.Err()
@@ -432,33 +348,6 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 		}
 	})
 
-	// Set proxy if defined in DB (assumes users table contains proxy_url column)
-	var proxyURL string
-	err = s.db.Get(&proxyURL, "SELECT proxy_url FROM users WHERE id=$1", userID)
-	if err == nil && proxyURL != "" {
-		parsed, perr := url.Parse(proxyURL)
-		if perr != nil {
-			log.Warn().Err(perr).Str("proxy", proxyURL).Msg("Invalid proxy URL, skipping proxy setup")
-		} else {
-
-			log.Info().Str("proxy", proxyURL).Msg("Configuring proxy")
-
-			if parsed.Scheme == "socks5" || parsed.Scheme == "socks5h" {
-				dialer, derr := proxy.FromURL(parsed, nil)
-				if derr != nil {
-					log.Warn().Err(derr).Str("proxy", proxyURL).Msg("Failed to build SOCKS proxy dialer, skipping proxy setup")
-				} else {
-					httpClient.SetProxy(proxyURL)
-					client.SetSOCKSProxy(dialer, whatsmeow.SetProxyOptions{})
-					log.Info().Msg("SOCKS proxy configured successfully")
-				}
-			} else {
-				httpClient.SetProxy(proxyURL)
-				client.SetProxyAddress(parsed.String(), whatsmeow.SetProxyOptions{})
-				log.Info().Msg("HTTP/HTTPS proxy configured successfully")
-			}
-		}
-	}
 	clientManager.SetHTTPClient(userID, httpClient)
 
 	if client.Store.ID == nil {
@@ -797,25 +686,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		log.Info().Msg("Received StreamReplaced event")
 		return
 	case *events.Message:
-
-		var s3Config struct {
-			Enabled       string `db:"s3_enabled"`
-			MediaDelivery string `db:"media_delivery"`
-		}
-
 		lastMessageCache.Set(mycli.userID, &evt.Info, cache.DefaultExpiration)
-		myuserinfo, found := userinfocache.Get(mycli.token)
-		if !found {
-			err := mycli.db.Get(&s3Config, "SELECT CASE WHEN s3_enabled = 1 THEN 'true' ELSE 'false' END AS s3_enabled, media_delivery FROM users WHERE id = $1", txtid)
-			if err != nil {
-				log.Error().Err(err).Msg("onMessage Failed to get S3 config from DB as it was not on cache")
-				s3Config.Enabled = "false"
-				s3Config.MediaDelivery = "base64"
-			}
-		} else {
-			s3Config.Enabled = myuserinfo.(Values).Get("S3Enabled")
-			s3Config.MediaDelivery = myuserinfo.(Values).Get("MediaDelivery")
-		}
 
 		postmap["type"] = "Message"
 		dowebhook = 1
@@ -839,14 +710,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			// try to get Image if any
 			img := evt.Message.GetImageMessage()
 			if img != nil {
-				// Create a temporary directory in /tmp
-				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
-				errDir := os.MkdirAll(tmpDirectory, 0751)
-				if errDir != nil {
-					log.Error().Err(errDir).Msg("Could not create temporary directory")
-					return
-				}
-
 				// Download the image
 				data, err := mycli.WAClient.Download(context.Background(), img)
 				if err != nil {
@@ -854,81 +717,40 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					return
 				}
 
-				// Determine the file extension based on the MIME type
-				exts, _ := mime.ExtensionsByType(img.GetMimetype())
-				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+exts[0])
+				// Get sender JID for inbox/outbox determination
+				isIncoming := !evt.Info.IsFromMe
+				contactJID := evt.Info.Sender.String()
+				if evt.Info.IsGroup {
+					contactJID = evt.Info.Chat.String()
+				}
 
-				// Write the image to the temporary file
-				err = os.WriteFile(tmpPath, data, 0600)
+				// Save file to disk
+				fileData, err := GetFileManager().SaveFile(
+					txtid,
+					contactJID,
+					evt.Info.ID,
+					data,
+					img.GetMimetype(),
+					evt.Info.ID,
+					isIncoming,
+				)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to save image to temporary file")
-					return
-				}
-
-				// Process S3 upload if enabled
-				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
-					// Get sender JID for inbox/outbox determination
-					isIncoming := evt.Info.IsFromMe == false
-					contactJID := evt.Info.Sender.String()
-					if evt.Info.IsGroup {
-						contactJID = evt.Info.Chat.String()
-					}
-
-					// Process S3 upload
-					s3Data, err := GetS3Manager().ProcessMediaForS3(
-						context.Background(),
-						txtid,
-						contactJID,
-						evt.Info.ID,
-						data,
-						img.GetMimetype(),
-						filepath.Base(tmpPath),
-						isIncoming,
-					)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to upload image to S3")
-					} else {
-						postmap["s3"] = s3Data
-					}
-				}
-
-				// Convert the image to base64 if needed
-				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
-					base64String, mimeType, err := fileToBase64(tmpPath)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to convert image to base64")
-						return
-					}
-
-					// Add the base64 string and other details to the postmap
-					postmap["base64"] = base64String
-					postmap["mimeType"] = mimeType
-					postmap["fileName"] = filepath.Base(tmpPath)
-				}
-
-				// Log the successful conversion
-				log.Info().Str("path", tmpPath).Msg("Image processed")
-
-				// Delete the temporary file
-				err = os.Remove(tmpPath)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to delete temporary file")
+					log.Error().Err(err).Msg("Failed to save image to disk")
 				} else {
-					log.Info().Str("path", tmpPath).Msg("Temporary file deleted")
+					postmap["file"] = fileData
 				}
+
+				// Also include base64 for backward compatibility
+				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
+				postmap["mimeType"] = img.GetMimetype()
+				postmap["fileName"] = fileData["fileName"]
+
+				log.Info().Str("path", fileData["path"].(string)).Msg("Image processed")
 			}
 
 			// try to get Audio if any
 			audio := evt.Message.GetAudioMessage()
 			if audio != nil {
-				// Create a temporary directory in /tmp
-				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
-				errDir := os.MkdirAll(tmpDirectory, 0751)
-				if errDir != nil {
-					log.Error().Err(errDir).Msg("Could not create temporary directory")
-					return
-				}
-
 				// Download the audio
 				data, err := mycli.WAClient.Download(context.Background(), audio)
 				if err != nil {
@@ -936,87 +758,40 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					return
 				}
 
-				// Determine the file extension based on the MIME type
-				exts, _ := mime.ExtensionsByType(audio.GetMimetype())
-				var ext string
-				if len(exts) > 0 {
-					ext = exts[0]
-				} else {
-					ext = ".ogg" // Default extension if MIME type is not recognized
+				// Get sender JID for inbox/outbox determination
+				isIncoming := !evt.Info.IsFromMe
+				contactJID := evt.Info.Sender.String()
+				if evt.Info.IsGroup {
+					contactJID = evt.Info.Chat.String()
 				}
-				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+ext)
 
-				// Write the audio to the temporary file
-				err = os.WriteFile(tmpPath, data, 0600)
+				// Save file to disk
+				fileData, err := GetFileManager().SaveFile(
+					txtid,
+					contactJID,
+					evt.Info.ID,
+					data,
+					audio.GetMimetype(),
+					evt.Info.ID,
+					isIncoming,
+				)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to save audio to temporary file")
-					return
-				}
-
-				// Process S3 upload if enabled
-				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
-					// Get sender JID for inbox/outbox determination
-					isIncoming := evt.Info.IsFromMe == false
-					contactJID := evt.Info.Sender.String()
-					if evt.Info.IsGroup {
-						contactJID = evt.Info.Chat.String()
-					}
-
-					// Process S3 upload
-					s3Data, err := GetS3Manager().ProcessMediaForS3(
-						context.Background(),
-						txtid,
-						contactJID,
-						evt.Info.ID,
-						data,
-						audio.GetMimetype(),
-						filepath.Base(tmpPath),
-						isIncoming,
-					)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to upload audio to S3")
-					} else {
-						postmap["s3"] = s3Data
-					}
-				}
-
-				// Convert the audio to base64 if needed
-				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
-					base64String, mimeType, err := fileToBase64(tmpPath)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to convert audio to base64")
-						return
-					}
-
-					// Add the base64 string and other details to the postmap
-					postmap["base64"] = base64String
-					postmap["mimeType"] = mimeType
-					postmap["fileName"] = filepath.Base(tmpPath)
-				}
-
-				// Log the successful conversion
-				log.Info().Str("path", tmpPath).Msg("Audio processed")
-
-				// Delete the temporary file
-				err = os.Remove(tmpPath)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to delete temporary file")
+					log.Error().Err(err).Msg("Failed to save audio to disk")
 				} else {
-					log.Info().Str("path", tmpPath).Msg("Temporary file deleted")
+					postmap["file"] = fileData
 				}
+
+				// Also include base64 for backward compatibility
+				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
+				postmap["mimeType"] = audio.GetMimetype()
+				postmap["fileName"] = fileData["fileName"]
+
+				log.Info().Str("path", fileData["path"].(string)).Msg("Audio processed")
 			}
 
 			// try to get Document if any
 			document := evt.Message.GetDocumentMessage()
 			if document != nil {
-				// Create a temporary directory in /tmp
-				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
-				errDir := os.MkdirAll(tmpDirectory, 0751)
-				if errDir != nil {
-					log.Error().Err(errDir).Msg("Could not create temporary directory")
-					return
-				}
-
 				// Download the document
 				data, err := mycli.WAClient.Download(context.Background(), document)
 				if err != nil {
@@ -1024,92 +799,40 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					return
 				}
 
-				// Determine the file extension
-				extension := ""
-				exts, err := mime.ExtensionsByType(document.GetMimetype())
-				if err == nil && len(exts) > 0 {
-					extension = exts[0]
-				} else {
-					filename := document.FileName
-					if filename != nil {
-						extension = filepath.Ext(*filename)
-					} else {
-						extension = ".bin" // Default extension if no filename or MIME type is available
-					}
+				// Get sender JID for inbox/outbox determination
+				isIncoming := !evt.Info.IsFromMe
+				contactJID := evt.Info.Sender.String()
+				if evt.Info.IsGroup {
+					contactJID = evt.Info.Chat.String()
 				}
-				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+extension)
 
-				// Write the document to the temporary file
-				err = os.WriteFile(tmpPath, data, 0600)
+				// Save file to disk
+				fileData, err := GetFileManager().SaveFile(
+					txtid,
+					contactJID,
+					evt.Info.ID,
+					data,
+					document.GetMimetype(),
+					evt.Info.ID,
+					isIncoming,
+				)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to save document to temporary file")
-					return
-				}
-
-				// Process S3 upload if enabled
-				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
-					// Get sender JID for inbox/outbox determination
-					isIncoming := evt.Info.IsFromMe == false
-					contactJID := evt.Info.Sender.String()
-					if evt.Info.IsGroup {
-						contactJID = evt.Info.Chat.String()
-					}
-
-					// Process S3 upload
-					s3Data, err := GetS3Manager().ProcessMediaForS3(
-						context.Background(),
-						txtid,
-						contactJID,
-						evt.Info.ID,
-						data,
-						document.GetMimetype(),
-						filepath.Base(tmpPath),
-						isIncoming,
-					)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to upload document to S3")
-					} else {
-						postmap["s3"] = s3Data
-					}
-				}
-
-				// Convert the document to base64 if needed
-				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
-					base64String, mimeType, err := fileToBase64(tmpPath)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to convert document to base64")
-						return
-					}
-
-					// Add the base64 string and other details to the postmap
-					postmap["base64"] = base64String
-					postmap["mimeType"] = mimeType
-					postmap["fileName"] = filepath.Base(tmpPath)
-				}
-
-				// Log the successful conversion
-				log.Info().Str("path", tmpPath).Msg("Document processed")
-
-				// Delete the temporary file
-				err = os.Remove(tmpPath)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to delete temporary file")
+					log.Error().Err(err).Msg("Failed to save document to disk")
 				} else {
-					log.Info().Str("path", tmpPath).Msg("Temporary file deleted")
+					postmap["file"] = fileData
 				}
+
+				// Also include base64 for backward compatibility
+				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
+				postmap["mimeType"] = document.GetMimetype()
+				postmap["fileName"] = fileData["fileName"]
+
+				log.Info().Str("path", fileData["path"].(string)).Msg("Document processed")
 			}
 
 			// try to get Video if any
 			video := evt.Message.GetVideoMessage()
 			if video != nil {
-				// Create a temporary directory in /tmp
-				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
-				errDir := os.MkdirAll(tmpDirectory, 0751)
-				if errDir != nil {
-					log.Error().Err(errDir).Msg("Could not create temporary directory")
-					return
-				}
-
 				// Download the video
 				data, err := mycli.WAClient.Download(context.Background(), video)
 				if err != nil {
@@ -1117,142 +840,79 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					return
 				}
 
-				// Determine the file extension based on the MIME type
-				exts, _ := mime.ExtensionsByType(video.GetMimetype())
-				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+exts[0])
+				// Get sender JID for inbox/outbox determination
+				isIncoming := !evt.Info.IsFromMe
+				contactJID := evt.Info.Sender.String()
+				if evt.Info.IsGroup {
+					contactJID = evt.Info.Chat.String()
+				}
 
-				// Write the video to the temporary file
-				err = os.WriteFile(tmpPath, data, 0600)
+				// Save file to disk
+				fileData, err := GetFileManager().SaveFile(
+					txtid,
+					contactJID,
+					evt.Info.ID,
+					data,
+					video.GetMimetype(),
+					evt.Info.ID,
+					isIncoming,
+				)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to save video to temporary file")
-					return
-				}
-
-				// Process S3 upload if enabled
-				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
-					// Get sender JID for inbox/outbox determination
-					isIncoming := evt.Info.IsFromMe == false
-					contactJID := evt.Info.Sender.String()
-					if evt.Info.IsGroup {
-						contactJID = evt.Info.Chat.String()
-					}
-
-					// Process S3 upload
-					s3Data, err := GetS3Manager().ProcessMediaForS3(
-						context.Background(),
-						txtid,
-						contactJID,
-						evt.Info.ID,
-						data,
-						video.GetMimetype(),
-						filepath.Base(tmpPath),
-						isIncoming,
-					)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to upload video to S3")
-					} else {
-						postmap["s3"] = s3Data
-					}
-				}
-
-				// Convert the video to base64 if needed
-				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
-					base64String, mimeType, err := fileToBase64(tmpPath)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to convert video to base64")
-						return
-					}
-
-					// Add the base64 string and other details to the postmap
-					postmap["base64"] = base64String
-					postmap["mimeType"] = mimeType
-					postmap["fileName"] = filepath.Base(tmpPath)
-				}
-
-				// Log the successful conversion
-				log.Info().Str("path", tmpPath).Msg("Video processed")
-
-				// Delete the temporary file
-				err = os.Remove(tmpPath)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to delete temporary file")
+					log.Error().Err(err).Msg("Failed to save video to disk")
 				} else {
-					log.Info().Str("path", tmpPath).Msg("Temporary file deleted")
+					postmap["file"] = fileData
 				}
+
+				// Also include base64 for backward compatibility
+				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
+				postmap["mimeType"] = video.GetMimetype()
+				postmap["fileName"] = fileData["fileName"]
+
+				log.Info().Str("path", fileData["path"].(string)).Msg("Video processed")
 			}
 
 			sticker := evt.Message.GetStickerMessage()
 			if sticker != nil {
-				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
-				errDir := os.MkdirAll(tmpDirectory, 0751)
-				if errDir != nil {
-					log.Error().Err(errDir).Msg("Could not create temporary directory")
-					return
-				}
-
-				// download the sticker using the DownloadableMessage interface
+				// Download the sticker
 				data, err := mycli.WAClient.Download(context.Background(), sticker)
 				if err != nil {
 					log.Error().Err(err).Msg("Failed to download sticker")
 					return
 				}
 
-				// tries to infer extension by mimetype; fallback to .webp
-				exts, _ := mime.ExtensionsByType(sticker.GetMimetype())
-				ext := ".webp"
-				if len(exts) > 0 && exts[0] != "" {
-					ext = exts[0]
+				// Get sender JID for inbox/outbox determination
+				isIncoming := !evt.Info.IsFromMe
+				contactJID := evt.Info.Sender.String()
+				if evt.Info.IsGroup {
+					contactJID = evt.Info.Chat.String()
 				}
 
-				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+ext)
-				if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-					log.Error().Err(err).Msg("Failed to save sticker to temporary file")
-					return
+				// Save file to disk
+				fileData, err := GetFileManager().SaveFile(
+					txtid,
+					contactJID,
+					evt.Info.ID,
+					data,
+					sticker.GetMimetype(),
+					evt.Info.ID,
+					isIncoming,
+				)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to save sticker to disk")
+				} else {
+					postmap["file"] = fileData
 				}
 
-				// if using S3 (same stream as other media)
-				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
-					isIncoming := evt.Info.IsFromMe == false
-					contactJID := evt.Info.Sender.String()
-					if evt.Info.IsGroup {
-						contactJID = evt.Info.Chat.String()
-					}
-					s3Data, err := GetS3Manager().ProcessMediaForS3(
-						context.Background(),
-						txtid,
-						contactJID,
-						evt.Info.ID,
-						data,
-						sticker.GetMimetype(),
-						filepath.Base(tmpPath),
-						isIncoming,
-					)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to upload sticker to S3")
-					} else {
-						postmap["s3"] = s3Data
-					}
-				}
-
-				// base64 (same output contract as other media)
-				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
-					base64String, mimeType, err := fileToBase64(tmpPath)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to convert sticker to base64")
-						return
-					}
-					postmap["base64"] = base64String
-					postmap["mimeType"] = mimeType
-					postmap["fileName"] = filepath.Base(tmpPath)
-				}
+				// Also include base64 for backward compatibility
+				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
+				postmap["mimeType"] = sticker.GetMimetype()
+				postmap["fileName"] = fileData["fileName"]
 
 				// useful metadata (optional, but handy)
 				postmap["isSticker"] = true
 				postmap["stickerAnimated"] = sticker.GetIsAnimated()
 
-				if err := os.Remove(tmpPath); err != nil {
-					log.Error().Err(err).Msg("Failed to delete temporary file")
-				}
+				log.Info().Str("path", fileData["path"].(string)).Msg("Sticker processed")
 			}
 
 		}
@@ -1358,9 +1018,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				}
 			}
 
-			// Try to get media link from S3 data if available
-			if s3Data, ok := postmap["s3"].(map[string]interface{}); ok {
-				if url, ok := s3Data["url"].(string); ok {
+			// Try to get media link from file data if available
+			if fileData, ok := postmap["file"].(map[string]interface{}); ok {
+				if url, ok := fileData["url"].(string); ok {
 					mediaLink = url
 				}
 			}
