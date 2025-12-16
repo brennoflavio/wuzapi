@@ -59,7 +59,6 @@ you can use to alter behaviour
 
 * -address  : sets the IP address to bind the server to (default 0.0.0.0)
 * -port  : sets the port number (default 8080)
-* -color : enable colored output for console logs
 * -osname : Connection OS Name in Whatsapp
 * -skipmedia : Skip downloading media from messages
 * -wadebug : enable whatsmeow debug, either INFO or DEBUG levels are suported
@@ -68,12 +67,6 @@ you can use to alter behaviour
 * -sslprivatekey : SSL Private Key File
 
 Example:
-
-To have colored logs:
-
-```
-./wuzapi -color=true
-```
 
 With time zone: 
 

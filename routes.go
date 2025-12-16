@@ -23,7 +23,7 @@ func (s *server) routes() {
 	output := zerolog.ConsoleWriter{
 		Out:        logOutput,
 		TimeFormat: time.RFC3339,
-		NoColor:    !*colorOutput,
+		NoColor:    true,
 	}
 	routerLog = zerolog.New(output).
 		With().

@@ -310,7 +310,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 		deviceStore = container.NewDevice()
 	}
 
-	clientLog := waLog.Stdout("Client", *waDebug, *colorOutput)
+	clientLog := waLog.Stdout("Client", *waDebug, false)
 
 	// Create the client with initialized deviceStore
 	var client *whatsmeow.Client

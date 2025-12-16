@@ -48,7 +48,6 @@ var (
 	waDebug             = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
 	skipMedia           = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
 	osName              = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
-	colorOutput         = flag.Bool("color", false, "Enable colored output for console logs")
 	sslcert             = flag.String("sslcertificate", "", "SSL Certificate File")
 	sslprivkey          = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
 	globalWebhook = flag.String("globalwebhook", "", "Global webhook URL to receive all events from all users")
@@ -225,26 +224,7 @@ func main() {
 	output := zerolog.ConsoleWriter{
 		Out:        logOutput,
 		TimeFormat: "2006-01-02 15:04:05 -07:00",
-		NoColor:    !*colorOutput,
-	}
-
-	output.FormatLevel = func(i interface{}) string {
-		if i == nil {
-			return ""
-		}
-		lvl := strings.ToUpper(i.(string))
-		switch lvl {
-		case "DEBUG":
-			return "\x1b[34m" + lvl + "\x1b[0m"
-		case "INFO":
-			return "\x1b[32m" + lvl + "\x1b[0m"
-		case "WARN":
-			return "\x1b[33m" + lvl + "\x1b[0m"
-		case "ERROR", "FATAL", "PANIC":
-			return "\x1b[31m" + lvl + "\x1b[0m"
-		default:
-			return lvl
-		}
+		NoColor:    true,
 	}
 
 	log.Logger = zerolog.New(output).
@@ -306,7 +286,7 @@ func main() {
 
 	var dbLog waLog.Logger
 	if *waDebug != "" {
-		dbLog = waLog.Stdout("Database", *waDebug, *colorOutput)
+		dbLog = waLog.Stdout("Database", *waDebug, false)
 	}
 
 	// Get database configuration
