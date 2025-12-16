@@ -20,26 +20,17 @@ func (s *server) routes() {
 	if s.mode == Stdio {
 		logOutput = os.Stderr
 	}
-	if *logType == "json" {
-		routerLog = zerolog.New(logOutput).
-			With().
-			Timestamp().
-			Str("role", filepath.Base(os.Args[0])).
-			Str("host", *address).
-			Logger()
-	} else {
-		output := zerolog.ConsoleWriter{
-			Out:        logOutput,
-			TimeFormat: time.RFC3339,
-			NoColor:    !*colorOutput,
-		}
-		routerLog = zerolog.New(output).
-			With().
-			Timestamp().
-			Str("role", filepath.Base(os.Args[0])).
-			Str("host", *address).
-			Logger()
+	output := zerolog.ConsoleWriter{
+		Out:        logOutput,
+		TimeFormat: time.RFC3339,
+		NoColor:    !*colorOutput,
 	}
+	routerLog = zerolog.New(output).
+		With().
+		Timestamp().
+		Str("role", filepath.Base(os.Args[0])).
+		Str("host", *address).
+		Logger()
 
 	// Serve media files from disk
 	mediaDir := GetFileManager().GetMediaDir()

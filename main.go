@@ -46,7 +46,6 @@ var (
 	address             = flag.String("address", "0.0.0.0", "Bind IP Address")
 	port                = flag.String("port", "8080", "Listen Port")
 	waDebug             = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
-	logType             = flag.String("logtype", "console", "Type of log output (console or json)")
 	skipMedia           = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
 	osName              = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
 	colorOutput         = flag.Bool("color", false, "Enable colored output for console logs")
@@ -223,44 +222,36 @@ func main() {
 		logOutput = os.Stderr
 	}
 
-	if *logType == "json" {
-		log.Logger = zerolog.New(logOutput).
-			With().
-			Timestamp().
-			Str("role", filepath.Base(os.Args[0])).
-			Logger()
-	} else {
-		output := zerolog.ConsoleWriter{
-			Out:        logOutput,
-			TimeFormat: "2006-01-02 15:04:05 -07:00",
-			NoColor:    !*colorOutput,
-		}
-
-		output.FormatLevel = func(i interface{}) string {
-			if i == nil {
-				return ""
-			}
-			lvl := strings.ToUpper(i.(string))
-			switch lvl {
-			case "DEBUG":
-				return "\x1b[34m" + lvl + "\x1b[0m"
-			case "INFO":
-				return "\x1b[32m" + lvl + "\x1b[0m"
-			case "WARN":
-				return "\x1b[33m" + lvl + "\x1b[0m"
-			case "ERROR", "FATAL", "PANIC":
-				return "\x1b[31m" + lvl + "\x1b[0m"
-			default:
-				return lvl
-			}
-		}
-
-		log.Logger = zerolog.New(output).
-			With().
-			Timestamp().
-			Str("role", filepath.Base(os.Args[0])).
-			Logger()
+	output := zerolog.ConsoleWriter{
+		Out:        logOutput,
+		TimeFormat: "2006-01-02 15:04:05 -07:00",
+		NoColor:    !*colorOutput,
 	}
+
+	output.FormatLevel = func(i interface{}) string {
+		if i == nil {
+			return ""
+		}
+		lvl := strings.ToUpper(i.(string))
+		switch lvl {
+		case "DEBUG":
+			return "\x1b[34m" + lvl + "\x1b[0m"
+		case "INFO":
+			return "\x1b[32m" + lvl + "\x1b[0m"
+		case "WARN":
+			return "\x1b[33m" + lvl + "\x1b[0m"
+		case "ERROR", "FATAL", "PANIC":
+			return "\x1b[31m" + lvl + "\x1b[0m"
+		default:
+			return lvl
+		}
+	}
+
+	log.Logger = zerolog.New(output).
+		With().
+		Timestamp().
+		Str("role", filepath.Base(os.Args[0])).
+		Logger()
 
 	// Setup timezone (after logger is configured)
 	tz := os.Getenv("TZ")
