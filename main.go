@@ -48,8 +48,6 @@ var (
 	waDebug             = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
 	skipMedia           = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
 	osName              = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
-	sslcert             = flag.String("sslcertificate", "", "SSL Certificate File")
-	sslprivkey          = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
 	globalWebhook = flag.String("globalwebhook", "", "Global webhook URL to receive all events from all users")
 	versionFlag         = flag.Bool("version", false, "Display version information and exit")
 	mode                = flag.String("mode", "http", "Server mode: http or stdio")
@@ -359,23 +357,8 @@ func startHTTPMode(s *server) {
 	}()
 
 	go func() {
-		if *sslcert != "" {
-
-			if *sslcert != "" && *sslprivkey != "" {
-				if _, err := os.Stat(*sslcert); os.IsNotExist(err) {
-					log.Fatal().Err(err).Msg("SSL certificate file does not exist")
-				}
-				if _, err := os.Stat(*sslprivkey); os.IsNotExist(err) {
-					log.Fatal().Err(err).Msg("SSL private key file does not exist")
-				}
-			}
-			if err := srv.ListenAndServeTLS(*sslcert, *sslprivkey); err != nil && err != http.ErrServerClosed {
-				log.Fatal().Err(err).Msg("HTTPS server failed to start")
-			}
-		} else {
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatal().Err(err).Msg("HTTP server failed to start")
-			}
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("HTTP server failed to start")
 		}
 	}()
 	log.Info().Str("address", *address).Str("port", *port).Msg("Server started. Waiting for connections...")
