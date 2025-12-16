@@ -118,17 +118,6 @@ func (s *server) GetHealth() http.HandlerFunc {
 
 // messageTypes moved to constants.go as supportedEventTypes
 
-func (s *server) authadmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		if token != *adminToken {
-			s.Respond(w, r, http.StatusUnauthorized, errors.New("unauthorized"))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 func (s *server) authalice(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 

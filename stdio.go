@@ -475,10 +475,6 @@ func (ss *stdioServer) executeHTTPHandler(req *jsonRpcRequest, httpMethod, httpP
 	if token, ok := req.Params["token"].(string); ok {
 		httpReq.Header.Set("token", token)
 	}
-	// Set admin token header (for admin authentication)
-	if adminToken, ok := req.Params["adminToken"].(string); ok {
-		httpReq.Header.Set("Authorization", adminToken)
-	}
 
 	recorder := httptest.NewRecorder()
 	ss.server.router.ServeHTTP(recorder, httpReq)

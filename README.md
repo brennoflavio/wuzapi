@@ -57,7 +57,6 @@ brew install asternic/wuzapi/wuzapi
 By default it will start a REST service in port 8080. These are the parameters
 you can use to alter behaviour
 
-* -admintoken  : sets authentication token for admin endpoints. If not specified it will be read from .env
 * -address  : sets the IP address to bind the server to (default 0.0.0.0)
 * -port  : sets the port number (default 8080)
 * -logtype : format for logs, either console (default) or json
@@ -97,11 +96,6 @@ cp .env.sample .env
 
 ### Environment Variables
 
-#### Required Settings
-```
-WUZAPI_ADMIN_TOKEN=your_admin_token_here
-```
-
 #### Optional Settings
 
 ```
@@ -118,12 +112,6 @@ WEBHOOK_ERROR_QUEUE_NAME=wuzapi_dead_letter_webhooks
 
 ### Important Notes
 
-#### Auto-Generated Credentials
-If the following settings are not provided, they will be auto-generated:
-* `WUZAPI_ADMIN_TOKEN`: Random 32-character token
-
-**Important**: Save auto-generated admin token to your `.env` file or you will lose access to admin functions on restart!
-
 #### Database
 
 WuzAPI uses SQLite as its database. No configuration is needed - the database files are automatically created in the `dbdata` directory.
@@ -136,11 +124,6 @@ SESSION_DEVICE_NAME=WuzAPI
 WUZAPI_PORT=8080 # Port for the WuzAPI server
 WUZAPI_GLOBAL_WEBHOOK= # Global webhook URL for all instances
 ```
-
-#### Key configuration options:
-
-* WUZAPI_ADMIN_TOKEN: Required - Authentication token for admin endpoints
-* TZ: Optional - Timezone for server operations (default: UTC)
 
 ### Docker Configuration
 
@@ -168,9 +151,7 @@ To interact with the API, you must include the `Authorization` header in HTTP re
 
 ## ADMIN Actions
 
-You can list, add and remove users using the admin endpoints. For that you must use the WUZAPI_ADMIN_TOKEN in the Authorization header
-
-Then you can use the /admin/users endpoint with the Authorization header containing the token to:
+You can list, add and remove users using the admin endpoints:
 
 - `GET /admin/users` - List all users
 - `POST /admin/users` - Create a new user

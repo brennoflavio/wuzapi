@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -53,7 +52,6 @@ var (
 	colorOutput         = flag.Bool("color", false, "Enable colored output for console logs")
 	sslcert             = flag.String("sslcertificate", "", "SSL Certificate File")
 	sslprivkey          = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
-	adminToken    = flag.String("admintoken", "", "Security Token to authorize admin actions (list/create/remove users)")
 	globalWebhook = flag.String("globalwebhook", "", "Global webhook URL to receive all events from all users")
 	versionFlag         = flag.Bool("version", false, "Display version information and exit")
 	mode                = flag.String("mode", "http", "Server mode: http or stdio")
@@ -273,21 +271,6 @@ func main() {
 		} else {
 			time.Local = loc
 			log.Info().Str("TZ", tz).Msg("Timezone defined")
-		}
-	}
-
-	if *adminToken == "" {
-		if v := os.Getenv("WUZAPI_ADMIN_TOKEN"); v != "" {
-			*adminToken = v
-		} else {
-			// Generate a random token if none provided
-			const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-			b := make([]byte, 32)
-			for i := range b {
-				b[i] = charset[rand.Intn(len(charset))]
-			}
-			*adminToken = string(b)
-			log.Warn().Str("admin_token", *adminToken).Msg("No admin token provided, generated a random one")
 		}
 	}
 

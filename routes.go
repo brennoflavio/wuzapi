@@ -48,7 +48,6 @@ func (s *server) routes() {
 	s.router.Handle("/health", s.GetHealth()).Methods("GET")
 
 	adminRoutes := s.router.PathPrefix("/admin").Subrouter()
-	adminRoutes.Use(s.authadmin)
 	adminRoutes.Handle("/users", s.ListUsers()).Methods("GET")
 	adminRoutes.Handle("/users/{id}", s.ListUsers()).Methods("GET")
 	adminRoutes.Handle("/users", s.AddUser()).Methods("POST")

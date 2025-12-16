@@ -1,20 +1,17 @@
 # API Reference
 
-The API supports two authentication methods:
-
-1. **User Token**: For regular endpoints, use the `Authorization` header with the user's token value.
-2. **Admin Token**: For admin endpoints (/admin/**), use the `Authorization` header with the admin token value (set in WUZAPI_ADMIN_TOKEN).
+For regular endpoints, use the `token` header with the user's token value.
 
 ### Request Requirements
 
 * Content-Type: application/json (JSON-encoded body)
-* Authentication: Include the `Authorization` header in all requests.
+* Authentication: Include the `token` header in user endpoints.
 
 ---
 
 ## Admin Endpoints (User Management)
 
-The following admin-only endpoints are used to manage users in the system. All require the Authorization header with the admin token (WUZAPI_ADMIN_TOKEN).
+The following endpoints are used to manage users in the system.
 
 
 ## List All Users
@@ -25,7 +22,7 @@ Returns a list of registered users.
 
 Example Request:
 ```
-curl -s -X GET -H 'Authorization: {{WUZAPI_ADMIN_TOKEN}}' http://localhost:8080/admin/users
+curl -s -X GET http://localhost:8080/admin/users
 ```
 
 Response:
@@ -54,7 +51,7 @@ Adds a new user
 
 Example Request:
 ```
-curl -s -X POST -H 'Authorization: {{WUZAPI_ADMIN_TOKEN}}' -H 'Content-Type: application/json' --data '{"name":"usuario2","token":"token2","webhook":"https://example.com/webhook2","events":"Message,ReadReceipt"}' http://localhost:8080/admin/users
+curl -s -X POST -H 'Content-Type: application/json' --data '{"name":"usuario2","token":"token2","webhook":"https://example.com/webhook2","events":"Message,ReadReceipt"}' http://localhost:8080/admin/users
 ```
 
 Response:
@@ -72,7 +69,7 @@ Deletes one user from the system by ID
 
 Example Request:
 ```
-curl -s -X DELETE -H 'Authorization: {{WUZAPI_ADMIN_TOKEN}}' http://localhost:8080/admin/users/2
+curl -s -X DELETE http://localhost:8080/admin/users/2
 ```
 
 Response:

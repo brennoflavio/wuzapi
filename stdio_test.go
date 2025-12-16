@@ -41,7 +41,6 @@ func TestAdminUsersAddAndList(t *testing.T) {
 
 	// First, add a user
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "Alice",
 		"token":      "alice-token-123",
 	}).toJSON(t)
@@ -60,7 +59,6 @@ func TestAdminUsersAddAndList(t *testing.T) {
 
 	// Now list users to verify the user was added
 	listRequest := newRequest("2", "admin.users.list", map[string]interface{}{
-		"adminToken": "test-admin-token",
 	}).toJSON(t)
 	listResponse := executeRequest(t, s, listRequest)
 
@@ -96,7 +94,6 @@ func TestAdminUsersGet(t *testing.T) {
 
 	// First add a user
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "Bob",
 		"token":      "bob-token-456",
 	}).toJSON(t)
@@ -116,7 +113,6 @@ func TestAdminUsersGet(t *testing.T) {
 
 	// Now get the specific user
 	getRequest := newRequest("2", "admin.users.get", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"userId":     userId,
 	}).toJSON(t)
 	getResponse := executeRequest(t, s, getRequest)
@@ -150,7 +146,6 @@ func TestAdminUsersDelete(t *testing.T) {
 
 	// First add a user
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "Charlie",
 		"token":      "charlie-token-789",
 	}).toJSON(t)
@@ -161,7 +156,6 @@ func TestAdminUsersDelete(t *testing.T) {
 
 	// Delete the user
 	deleteRequest := newRequest("2", "admin.users.delete", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"userId":     userId,
 	}).toJSON(t)
 	deleteResponse := executeRequest(t, s, deleteRequest)
@@ -176,7 +170,6 @@ func TestAdminUsersDelete(t *testing.T) {
 
 	// Verify user is gone by listing
 	listRequest := newRequest("3", "admin.users.list", map[string]interface{}{
-		"adminToken": "test-admin-token",
 	}).toJSON(t)
 	listResponse := executeRequest(t, s, listRequest)
 
@@ -199,7 +192,6 @@ func TestSessionStatus(t *testing.T) {
 
 	// First create a user to get a valid token
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "TestUser",
 		"token":      "test-user-token",
 	}).toJSON(t)
@@ -247,7 +239,6 @@ func TestChatSendText(t *testing.T) {
 
 	// Create a user first
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "MessageUser",
 		"token":      "message-token",
 	}).toJSON(t)
@@ -289,7 +280,6 @@ func TestChatHistory(t *testing.T) {
 
 	// Create a user with history enabled
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "HistoryUser",
 		"token":      "history-token",
 		"history":    100,
@@ -377,10 +367,6 @@ func executeRequest(t *testing.T, s *server, request string) map[string]interfac
 
 func makeTestServer(t *testing.T) *server {
 	t.Helper()
-
-	// Set admin token for tests
-	testToken := "test-admin-token"
-	*adminToken = testToken
 
 	// Use in-memory database
 	db, err := sqlx.Open("sqlite", ":memory:")
@@ -475,7 +461,6 @@ func TestWebhookUpdate(t *testing.T) {
 
 	// Create a user first
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "WebhookUser",
 		"token":      "webhook-token",
 	}).toJSON(t)
@@ -524,7 +509,6 @@ func TestWebhookSet(t *testing.T) {
 
 	// Create a user first
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "SetUser",
 		"token":      "set-token",
 	}).toJSON(t)
@@ -552,7 +536,6 @@ func TestWebhookDelete(t *testing.T) {
 
 	// Create a user with webhook configured
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "DeleteUser",
 		"token":      "delete-token",
 	}).toJSON(t)
@@ -679,7 +662,6 @@ func TestMissingUserIdParam(t *testing.T) {
 
 	// Test admin.users.get without userId parameter
 	request := newRequest("1", "admin.users.get", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		// userId missing
 	}).toJSON(t)
 	response := executeRequest(t, s, request)
@@ -711,7 +693,6 @@ func TestInvalidUserIdParamType(t *testing.T) {
 
 	// Test with invalid userId type (number instead of string)
 	request := newRequest("1", "admin.users.get", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"userId":     12345, // number instead of string
 	}).toJSON(t)
 	response := executeRequest(t, s, request)
@@ -767,7 +748,6 @@ func TestUserContacts(t *testing.T) {
 
 	// Create a user first
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "ContactsUser",
 		"token":      "contacts-token",
 	}).toJSON(t)
@@ -799,7 +779,6 @@ func TestGroupList(t *testing.T) {
 
 	// Create a user first
 	addRequest := newRequest("1", "admin.users.add", map[string]interface{}{
-		"adminToken": "test-admin-token",
 		"name":       "GroupUser",
 		"token":      "group-token",
 	}).toJSON(t)
