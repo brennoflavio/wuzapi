@@ -83,14 +83,8 @@ cp .env.sample .env
 
 ```
 TZ=America/New_York
-WEBHOOK_FORMAT=json
 SESSION_DEVICE_NAME=WuzAPI
 WUZAPI_PORT=8080
-WUZAPI_GLOBAL_WEBHOOK=https://your-global-webhook.url
-WEBHOOK_RETRY_ENABLED=true
-WEBHOOK_RETRY_COUNT=2
-WEBHOOK_RETRY_DELAY_SECONDS=30
-WEBHOOK_ERROR_QUEUE_NAME=wuzapi_dead_letter_webhooks
 ```
 
 ### Important Notes
@@ -102,10 +96,8 @@ WuzAPI uses SQLite as its database. No configuration is needed - the database fi
 #### Optional Settings
 ```
 TZ=America/New_York
-WEBHOOK_FORMAT=json # or "form" for the default
 SESSION_DEVICE_NAME=WuzAPI
 WUZAPI_PORT=8080 # Port for the WuzAPI server
-WUZAPI_GLOBAL_WEBHOOK= # Global webhook URL for all instances
 ```
 
 ### Docker Configuration

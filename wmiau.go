@@ -226,7 +226,7 @@ func (s *server) startClient(userID string, textjid string, token string) {
 						log.Info().Str("qrcode", base64qrcode).Msg("update global user with qr code")
 					}
 
-					//send QR code with webhook
+					// Store QR code event
 					postmap := make(map[string]interface{})
 					postmap["event"] = evt.Event
 					postmap["qrCodeBase64"] = base64qrcode
@@ -236,7 +236,7 @@ func (s *server) startClient(userID string, textjid string, token string) {
 
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
-					// Send webhook notifying QR timeout before cleanup
+					// Store QR timeout event before cleanup
 					postmap := make(map[string]interface{})
 					postmap["event"] = evt.Event
 					postmap["type"] = "QRTimeout"
@@ -373,10 +373,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	txtid := mycli.userID
 	postmap := make(map[string]interface{})
 	postmap["event"] = rawEvt
-	dowebhook := 0
 
 	switch evt := rawEvt.(type) {
 	case *events.AppStateSyncComplete:
+		postmap["type"] = "AppStateSyncComplete"
 		if len(mycli.WAClient.Store.PushName) > 0 && evt.Name == appstate.WAPatchCriticalBlock {
 			err := mycli.WAClient.SendPresence(context.Background(), types.PresenceAvailable)
 			if err != nil {
@@ -387,7 +387,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 	case *events.Connected, *events.PushNameSetting:
 		postmap["type"] = "Connected"
-		dowebhook = 1
 		if len(mycli.WAClient.Store.PushName) == 0 {
 			break
 		}
@@ -416,7 +415,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		postmap["type"] = "PairSuccess"
-		dowebhook = 1
 
 		txtid = globalUser.Get("Id")
 		token := globalUser.Get("Token")
@@ -505,13 +503,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			}()
 		}
 	case *events.StreamReplaced:
+		postmap["type"] = "StreamReplaced"
 		log.Info().Msg("Received StreamReplaced event")
-		return
 	case *events.Message:
 		lastMessageCache.Set(mycli.userID, &evt.Info, cache.DefaultExpiration)
 
 		postmap["type"] = "Message"
-		dowebhook = 1
 		metaParts := []string{fmt.Sprintf("pushname: %s", evt.Info.PushName), fmt.Sprintf("timestamp: %s", evt.Info.Timestamp)}
 		if evt.Info.Type != "" {
 			metaParts = append(metaParts, fmt.Sprintf("type: %s", evt.Info.Type))
@@ -875,7 +872,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 	case *events.Receipt:
 		postmap["type"] = "ReadReceipt"
-		dowebhook = 1
 		//if evt.Type == events.ReceiptTypeRead || evt.Type == events.ReceiptTypeReadSelf {
 		if evt.Type == types.ReceiptTypeRead || evt.Type == types.ReceiptTypeReadSelf {
 			log.Info().Strs("id", evt.MessageIDs).Str("source", evt.SourceString()).Str("timestamp", fmt.Sprintf("%v", evt.Timestamp)).Msg("Message was read")
@@ -890,12 +886,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			postmap["state"] = "Delivered"
 			log.Info().Str("id", evt.MessageIDs[0]).Str("source", evt.SourceString()).Str("timestamp", fmt.Sprintf("%v", evt.Timestamp)).Msg("Message delivered")
 		} else {
-			// Discard webhooks for inactive or other delivery types
+			// Skip storing inactive or other delivery types
 			return
 		}
 	case *events.Presence:
 		postmap["type"] = "Presence"
-		dowebhook = 1
 		if evt.Unavailable {
 			postmap["state"] = "offline"
 			if evt.LastSeen.IsZero() {
@@ -909,7 +904,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 	case *events.HistorySync:
 		postmap["type"] = "HistorySync"
-		dowebhook = 1
 
 		// Save HistorySync messages to message_history table
 		if evt.Data != nil && evt.Data.Conversations != nil {
@@ -1180,7 +1174,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		log.Info().Str("index", fmt.Sprintf("%+v", evt.Index)).Str("actionValue", fmt.Sprintf("%+v", evt.SyncActionValue)).Msg("App state event received")
 	case *events.LoggedOut:
 		postmap["type"] = "LoggedOut"
-		dowebhook = 1
 		log.Info().Str("reason", evt.Reason.String()).Msg("Logged out")
 		defer func() {
 			// Use a non-blocking send to prevent a deadlock if the receiver has already terminated.
@@ -1197,133 +1190,101 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 	case *events.ChatPresence:
 		postmap["type"] = "ChatPresence"
-		dowebhook = 1
 		log.Info().Str("state", fmt.Sprintf("%s", evt.State)).Str("media", fmt.Sprintf("%s", evt.Media)).Str("chat", evt.MessageSource.Chat.String()).Str("sender", evt.MessageSource.Sender.String()).Msg("Chat Presence received")
 	case *events.CallOffer:
 		postmap["type"] = "CallOffer"
-		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call offer")
 	case *events.CallAccept:
 		postmap["type"] = "CallAccept"
-		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call accept")
 	case *events.CallTerminate:
 		postmap["type"] = "CallTerminate"
-		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call terminate")
 	case *events.CallOfferNotice:
 		postmap["type"] = "CallOfferNotice"
-		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call offer notice")
 	case *events.CallRelayLatency:
 		postmap["type"] = "CallRelayLatency"
-		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call relay latency")
 	case *events.Disconnected:
 		postmap["type"] = "Disconnected"
-		dowebhook = 1
 		log.Info().Str("reason", fmt.Sprintf("%+v", evt)).Msg("Disconnected from Whatsapp")
 	case *events.ConnectFailure:
 		postmap["type"] = "ConnectFailure"
-		dowebhook = 1
 		log.Error().Str("reason", fmt.Sprintf("%+v", evt)).Msg("Failed to connect to Whatsapp")
 	case *events.UndecryptableMessage:
 		postmap["type"] = "UndecryptableMessage"
-		dowebhook = 1
 		log.Warn().Str("info", evt.Info.SourceString()).Msg("Undecryptable message received")
 	case *events.MediaRetry:
 		postmap["type"] = "MediaRetry"
-		dowebhook = 1
 		log.Info().Str("messageID", evt.MessageID).Msg("Media retry event")
 	case *events.GroupInfo:
 		postmap["type"] = "GroupInfo"
-		dowebhook = 1
 		log.Info().Str("jid", evt.JID.String()).Msg("Group info updated")
 	case *events.JoinedGroup:
 		postmap["type"] = "JoinedGroup"
-		dowebhook = 1
 		log.Info().Str("jid", evt.JID.String()).Msg("Joined group")
 	case *events.Picture:
 		postmap["type"] = "Picture"
-		dowebhook = 1
 		log.Info().Str("jid", evt.JID.String()).Msg("Picture updated")
 	case *events.BlocklistChange:
 		postmap["type"] = "BlocklistChange"
-		dowebhook = 1
 		log.Info().Str("jid", evt.JID.String()).Msg("Blocklist changed")
 	case *events.Blocklist:
 		postmap["type"] = "Blocklist"
-		dowebhook = 1
 		log.Info().Msg("Blocklist received")
 	case *events.KeepAliveRestored:
 		postmap["type"] = "KeepAliveRestored"
-		dowebhook = 1
 		log.Info().Msg("Keep alive restored")
 	case *events.KeepAliveTimeout:
 		postmap["type"] = "KeepAliveTimeout"
-		dowebhook = 1
 		log.Warn().Msg("Keep alive timeout")
 	case *events.ClientOutdated:
 		postmap["type"] = "ClientOutdated"
-		dowebhook = 1
 		log.Warn().Msg("Client outdated")
 	case *events.TemporaryBan:
 		postmap["type"] = "TemporaryBan"
-		dowebhook = 1
 		log.Info().Msg("Temporary ban")
 	case *events.StreamError:
 		postmap["type"] = "StreamError"
-		dowebhook = 1
 		log.Error().Str("code", evt.Code).Msg("Stream error")
 	case *events.PairError:
 		postmap["type"] = "PairError"
-		dowebhook = 1
 		log.Error().Msg("Pair error")
 	case *events.PrivacySettings:
 		postmap["type"] = "PrivacySettings"
-		dowebhook = 1
 		log.Info().Msg("Privacy settings updated")
 	case *events.UserAbout:
 		postmap["type"] = "UserAbout"
-		dowebhook = 1
 		log.Info().Str("jid", evt.JID.String()).Msg("User about updated")
 	case *events.OfflineSyncCompleted:
 		postmap["type"] = "OfflineSyncCompleted"
-		dowebhook = 1
 		log.Info().Msg("Offline sync completed")
 	case *events.OfflineSyncPreview:
 		postmap["type"] = "OfflineSyncPreview"
-		dowebhook = 1
 		log.Info().Msg("Offline sync preview")
 	case *events.IdentityChange:
 		postmap["type"] = "IdentityChange"
-		dowebhook = 1
 		log.Info().Str("jid", evt.JID.String()).Msg("Identity changed")
 	case *events.NewsletterJoin:
 		postmap["type"] = "NewsletterJoin"
-		dowebhook = 1
 		log.Info().Str("jid", evt.ID.String()).Msg("Newsletter joined")
 	case *events.NewsletterLeave:
 		postmap["type"] = "NewsletterLeave"
-		dowebhook = 1
 		log.Info().Str("jid", evt.ID.String()).Msg("Newsletter left")
 	case *events.NewsletterMuteChange:
 		postmap["type"] = "NewsletterMuteChange"
-		dowebhook = 1
 		log.Info().Str("jid", evt.ID.String()).Msg("Newsletter mute changed")
 	case *events.NewsletterLiveUpdate:
 		postmap["type"] = "NewsletterLiveUpdate"
-		dowebhook = 1
 		log.Info().Msg("Newsletter live update")
 	case *events.FBMessage:
 		postmap["type"] = "FBMessage"
-		dowebhook = 1
 		log.Info().Str("info", evt.Info.SourceString()).Msg("Facebook message received")
 	default:
+		postmap["type"] = "Unknown"
 		log.Warn().Str("event", fmt.Sprintf("%+v", evt)).Msg("Unhandled event")
 	}
 
-	if dowebhook == 1 {
-		processEvent(mycli, postmap)
-	}
+	processEvent(mycli, postmap)
 }

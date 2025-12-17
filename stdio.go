@@ -434,20 +434,6 @@ func (ss *stdioServer) routeRequest(req *jsonRpcRequest) {
 		httpMethod = "GET"
 		httpPath = "/newsletter/list"
 
-	// Webhook management
-	case "webhook.get":
-		httpMethod = "GET"
-		httpPath = "/webhook"
-	case "webhook.set":
-		httpMethod = "POST"
-		httpPath = "/webhook"
-	case "webhook.update":
-		httpMethod = "PUT"
-		httpPath = "/webhook"
-	case "webhook.delete":
-		httpMethod = "DELETE"
-		httpPath = "/webhook"
-
 	default:
 		ss.sendError(req.ID, 404, fmt.Sprintf("unknown method: %s", req.Method))
 		return
@@ -586,7 +572,7 @@ type jsonRpcNotification struct {
 	Params  map[string]interface{} `json:"params,omitempty"`
 }
 
-// SendNotification sends a JSON-RPC notification to stdout (webhooks in stdio mode)
+// SendNotification sends a JSON-RPC notification to stdout (events in stdio mode)
 // This is thread-safe - os.Stdout writes are atomic at the OS level
 func (s *server) SendNotification(method string, params map[string]interface{}) {
 	if s.mode != Stdio {

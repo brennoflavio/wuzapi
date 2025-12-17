@@ -226,7 +226,7 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 		// Add quoted_message_id column to message_history table
 		err = addColumnIfNotExistsSQLite(tx, "message_history", "quoted_message_id", "TEXT")
 	case 7:
-		// Add hmac_key column for webhook signing (feature not implemented)
+		// Add hmac_key column (legacy, not used)
 		err = addColumnIfNotExistsSQLite(tx, "users", "hmac_key", "BLOB")
 	case 8:
 		// Add dataJson column to message_history table

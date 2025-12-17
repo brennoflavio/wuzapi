@@ -189,12 +189,11 @@ func (s *server) Disconnect() http.HandlerFunc {
 		if clientManager.GetWhatsmeowClient().IsConnected() == true {
 			//if clientManager.GetWhatsmeowClient().IsLoggedIn() == true {
 			log.Info().Str("jid", jid).Msg("Disconnection successfull")
-			_, err := s.db.Exec("UPDATE users SET connected=0,events=$1 WHERE id=$2", "", txtid)
+			_, err := s.db.Exec("UPDATE users SET connected=0 WHERE id=$1", txtid)
 			if err != nil {
-				log.Warn().Str("txtid", txtid).Msg("Could not set events in users table")
+				log.Warn().Str("txtid", txtid).Msg("Could not update users table")
 			}
 			log.Info().Str("txtid", txtid).Msg("Update DB on disconnection")
-			updateGlobalUser("Events", "")
 
 			response := map[string]interface{}{"Details": "Disconnected"}
 			responseJson, err := json.Marshal(response)
@@ -385,9 +384,7 @@ func (s *server) GetStatus() http.HandlerFunc {
 			Str("Id", globalUser.Get("Id")).
 			Str("Jid", globalUser.Get("Jid")).
 			Str("Name", globalUser.Get("Name")).
-			Str("Webhook", globalUser.Get("Webhook")).
 			Str("Token", globalUser.Get("Token")).
-			Str("Events", globalUser.Get("Events")).
 			Str("History", globalUser.Get("History")).
 			Msg("User info values")
 
@@ -401,8 +398,6 @@ func (s *server) GetStatus() http.HandlerFunc {
 			"loggedIn":  isLoggedIn,
 			"token":     globalUser.Get("Token"),
 			"jid":       globalUser.Get("Jid"),
-			"webhook":   globalUser.Get("Webhook"),
-			"events":    globalUser.Get("Events"),
 			"qrcode":    globalUser.Get("Qrcode"),
 			"history":   globalUser.Get("History"),
 		}
