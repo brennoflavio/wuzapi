@@ -1,4 +1,14 @@
-# WUZAPI
+# WUZAPI-UT
+
+WuzAPI-UT is a reimplementation of the amazing [WuzAPI](https://github.com/asternic/wuzapi) project for Ubuntu Touch.
+
+Its a hard fork that removes most of the features, keeping the essentials to have
+a Whatsapp Client on mobile devices. All credits goes to [Nicolás Gudiño](https://github.com/asternic) and contributors,
+preserved in this README.
+
+This project is designed to be a server for [Greenline](https://github.com/brennoflavio/greenline), a Whatsapp Client for Ubuntu Touch Devices.
+
+---
 
 <img src="static/favicon.ico" width="30"> WuzAPI is an implementation 
 of the [@tulir/whatsmeow](https://github.com/tulir/whatsmeow) library as a 
