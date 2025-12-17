@@ -19,7 +19,6 @@ Be very careful—do not use this to send SPAM or anything similar. Use at your 
 * **Users:** Check if phone numbers have WhatsApp, get user information and avatars, and retrieve the full contact list.
 * **Chat:** Set presence (typing/paused, recording media), mark messages as read, download images from messages, send reactions.
 * **Groups:** Create, delete and list groups, get info, get invite links, set participants, change group photos and names.
-* **Webhooks:** Set and get webhooks that will be called whenever events or messages are received.
 
 ## Prerequisites
 
@@ -136,7 +135,6 @@ The JSON body for creating a new user must contain:
 
 - `name` [string] : User's name 
 - `token` [string] : Security token to authorize/authenticate this user
-- `webhook` [string] : URL to send events via POST (optional)
 - `events` [string] : Comma-separated list of events to receive (required) - Valid events are: "Message", "ReadReceipt", "Presence", "HistorySync", "ChatPresence", "All"
 - `expiration` [int] : Expiration timestamp (optional, not enforced by the system)
 
