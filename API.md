@@ -6,49 +6,6 @@
 
 ---
 
-## Admin Endpoints (User Management)
-
-The following endpoints are used to manage users in the system.
-
-## Add User
-
-*POST /admin/users*
-
-Adds a new user
-
-Example Request:
-```
-curl -s -X POST -H 'Content-Type: application/json' --data '{"name":"usuario2","token":"token2","webhook":"https://example.com/webhook2","events":"Message,ReadReceipt"}' http://localhost:8080/admin/users
-```
-
-Response:
-
-```json
-{
-  "id": 2
-}
-```
-## Delete User 
-
-*DELETE /admin/users/{id}*
-
-Deletes one user from the system by ID
-
-Example Request:
-```
-curl -s -X DELETE http://localhost:8080/admin/users/2
-```
-
-Response:
-
-```json
-{
-  "Details": "User deleted successfully"
-}
-```
-
----
-
 ## Webhook
 
 The following _webhook_ endpoints are used to get or set the webhook that will be called whenever a message or event is received. Available event types are:
