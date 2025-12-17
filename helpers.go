@@ -202,13 +202,6 @@ func getOpenGraphData(ctx context.Context, urlStr string, userID string) (title,
 	return data.Title, data.Description, data.ImageData
 }
 
-// Update entry in User map
-func updateUserInfo(values interface{}, field string, value string) interface{} {
-	log.Debug().Str("field", field).Str("value", value).Msg("User info updated")
-	values.(Values).m[field] = value
-	return values
-}
-
 // webhook for regular messages
 func callHook(myurl string, payload map[string]string, userID string) {
 	log.Info().Str("url", myurl).Str("userID", userID).Msg("Sending POST to client with retry logic")

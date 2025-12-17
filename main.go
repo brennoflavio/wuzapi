@@ -18,6 +18,7 @@ import (
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
@@ -60,9 +61,9 @@ var (
 	container        *sqlstore.Container
 	clientManager    = NewClientManager()
 	killchannel      = make(map[string](chan bool))
-	userinfocache    = cache.New(5*time.Minute, 10*time.Minute)
 	lastMessageCache = cache.New(24*time.Hour, 24*time.Hour)
 	globalHTTPClient = newSafeHTTPClient()
+	globalUser       = Values{m: make(map[string]string)} // Global single user loaded at startup
 )
 
 var privateIPBlocks []*net.IPNet
@@ -282,6 +283,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Load or create the global single user
+	if err = loadOrCreateGlobalUser(db); err != nil {
+		log.Fatal().Err(err).Msg("Failed to load or create global user")
+		if err := db.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close database connection during cleanup")
+		}
+		os.Exit(1)
+	}
+
 	var dbLog waLog.Logger
 	if *waDebug != "" {
 		dbLog = waLog.Stdout("Database", *waDebug, false)
@@ -372,4 +382,79 @@ func startStdioMode(s *server) {
 		os.Exit(1)
 	}
 	log.Info().Msg("Stdio server exited properly")
+}
+
+// loadOrCreateGlobalUser loads the first user from the database or creates a default one if none exists.
+// The user is stored in the globalUser variable for use throughout the application.
+func loadOrCreateGlobalUser(db *sqlx.DB) error {
+	var id, name, webhook, jid, events, qrcode string
+	var history int64
+
+	// Try to get the first user from the database
+	err := db.QueryRow("SELECT id, name, webhook, jid, events, qrcode, COALESCE(history, 0) FROM users LIMIT 1").
+		Scan(&id, &name, &webhook, &jid, &events, &qrcode, &history)
+
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			// No user exists, create a default one
+			id = uuid.New().String()
+			name = "default"
+			token := uuid.New().String()
+
+			_, err = db.Exec(
+				"INSERT INTO users (id, name, token, webhook, expiration, events, jid, qrcode, history) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+				id, name, token, "", 0, "", "", "", 0,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create default user: %w", err)
+			}
+
+			log.Info().Str("id", id).Str("name", name).Str("token", token).Msg("Created default user")
+
+			globalUser = Values{m: map[string]string{
+				"Id":      id,
+				"Name":    name,
+				"Jid":     "",
+				"Webhook": "",
+				"Token":   token,
+				"Events":  "",
+				"Qrcode":  "",
+				"History": "0",
+			}}
+		} else {
+			return fmt.Errorf("failed to query users: %w", err)
+		}
+	} else {
+		// User exists, load the token as well
+		var token string
+		err = db.QueryRow("SELECT token FROM users WHERE id = $1", id).Scan(&token)
+		if err != nil {
+			return fmt.Errorf("failed to get user token: %w", err)
+		}
+
+		globalUser = Values{m: map[string]string{
+			"Id":      id,
+			"Name":    name,
+			"Jid":     jid,
+			"Webhook": webhook,
+			"Token":   token,
+			"Events":  events,
+			"Qrcode":  qrcode,
+			"History": fmt.Sprintf("%d", history),
+		}}
+
+		log.Info().Str("id", id).Str("name", name).Msg("Loaded existing user")
+	}
+
+	return nil
+}
+
+// updateGlobalUser updates a field in the global user and persists it to memory.
+// Database updates should be done separately.
+func updateGlobalUser(field string, value string) {
+	if globalUser.m == nil {
+		globalUser.m = make(map[string]string)
+	}
+	globalUser.m[field] = value
+	log.Debug().Str("field", field).Str("value", value).Msg("Global user updated")
 }

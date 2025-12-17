@@ -42,11 +42,7 @@ type MyClient struct {
 func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
 	jsonDataStr := string(jsonData)
 
-	instance_name := ""
-	userinfo, found := userinfocache.Get(token)
-	if found {
-		instance_name = userinfo.(Values).Get("Name")
-	}
+	instance_name := globalUser.Get("Name")
 
 	if *globalWebhook != "" {
 		log.Info().Str("url", *globalWebhook).Msg("Calling global webhook")
@@ -61,11 +57,7 @@ func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
 }
 
 func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID string, token string) {
-	instance_name := ""
-	userinfo, found := userinfocache.Get(token)
-	if found {
-		instance_name = userinfo.(Values).Get("Name")
-	}
+	instance_name := globalUser.Get("Name")
 	data := map[string]string{
 		"jsonData":     string(jsonData),
 		"userID":       userID,
@@ -98,18 +90,8 @@ func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID s
 }
 
 func updateAndGetUserSubscriptions(mycli *MyClient) ([]string, error) {
-	// Get updated events from cache/database
-	currentEvents := ""
-	userinfo2, found2 := userinfocache.Get(mycli.token)
-	if found2 {
-		currentEvents = userinfo2.(Values).Get("Events")
-	} else {
-		// If not in cache, get from database
-		if err := mycli.db.Get(&currentEvents, "SELECT events FROM users WHERE id=$1", mycli.userID); err != nil {
-			log.Warn().Err(err).Str("userID", mycli.userID).Msg("Could not get events from DB")
-			return nil, err // Propagate the error
-		}
-	}
+	// Get events from globalUser
+	currentEvents := globalUser.Get("Events")
 
 	// Update client subscriptions if changed
 	eventarray := strings.Split(currentEvents, ",")
@@ -132,14 +114,7 @@ func updateAndGetUserSubscriptions(mycli *MyClient) ([]string, error) {
 }
 
 func getUserWebhookUrl(token string) string {
-	webhookurl := ""
-	myuserinfo, found := userinfocache.Get(token)
-	if !found {
-		log.Warn().Str("token", token).Msg("Could not call webhook as there is no user for this token")
-	} else {
-		webhookurl = myuserinfo.(Values).Get("Webhook")
-	}
-	return webhookurl
+	return globalUser.Get("Webhook")
 }
 
 func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path string) {
@@ -203,64 +178,48 @@ func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userI
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *server) connectOnStartup() {
-	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,COALESCE(history, 0) as history FROM users WHERE connected=1")
+	// Check if the global user should be connected on startup
+	txtid := globalUser.Get("Id")
+	var connected int
+	err := s.db.Get(&connected, "SELECT connected FROM users WHERE id=$1", txtid)
 	if err != nil {
-		log.Error().Err(err).Msg("DB Problem")
+		log.Error().Err(err).Msg("DB Problem checking connected status")
 		return
 	}
-	defer rows.Close()
-	for rows.Next() {
-		txtid := ""
-		token := ""
-		jid := ""
-		name := ""
-		webhook := ""
-		events := ""
-		var history int
-		err = rows.Scan(&txtid, &name, &token, &jid, &webhook, &events, &history)
-		if err != nil {
-			log.Error().Err(err).Msg("DB Problem")
-			return
-		} else {
-			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-			v := Values{map[string]string{
-				"Id":      txtid,
-				"Name":    name,
-				"Jid":     jid,
-				"Webhook": webhook,
-				"Token":   token,
-				"Events":  events,
-				"History": fmt.Sprintf("%d", history),
-			}}
-			userinfocache.Set(token, v, cache.NoExpiration)
-			// Gets and set subscription to webhook events
-			eventarray := strings.Split(events, ",")
 
-			var subscribedEvents []string
-			if len(eventarray) == 1 && eventarray[0] == "" {
-				subscribedEvents = []string{}
-			} else {
-				for _, arg := range eventarray {
-					if !Find(supportedEventTypes, arg) {
-						log.Warn().Str("Type", arg).Msg("Event type discarded")
-						continue
-					}
-					if !Find(subscribedEvents, arg) {
-						subscribedEvents = append(subscribedEvents, arg)
-					}
-				}
+	if connected != 1 {
+		log.Info().Str("userId", txtid).Msg("User not marked as connected, skipping startup connection")
+		return
+	}
 
+	token := globalUser.Get("Token")
+	jid := globalUser.Get("Jid")
+	events := globalUser.Get("Events")
+
+	log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
+
+	// Gets and set subscription to webhook events
+	eventarray := strings.Split(events, ",")
+
+	var subscribedEvents []string
+	if len(eventarray) == 1 && eventarray[0] == "" {
+		subscribedEvents = []string{}
+	} else {
+		for _, arg := range eventarray {
+			if !Find(supportedEventTypes, arg) {
+				log.Warn().Str("Type", arg).Msg("Event type discarded")
+				continue
 			}
-			eventstring := strings.Join(subscribedEvents, ",")
-			log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
-			killchannel[txtid] = make(chan bool, 1)
-			go s.startClient(txtid, jid, token, subscribedEvents)
+			if !Find(subscribedEvents, arg) {
+				subscribedEvents = append(subscribedEvents, arg)
+			}
 		}
 	}
-	err = rows.Err()
-	if err != nil {
-		log.Error().Err(err).Msg("DB Problem")
-	}
+
+	eventstring := strings.Join(subscribedEvents, ",")
+	log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
+	killchannel[txtid] = make(chan bool, 1)
+	go s.startClient(txtid, jid, token, subscribedEvents)
 }
 
 func parseJID(arg string) (types.JID, bool) {
@@ -366,8 +325,6 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 				return
 			}
 
-			myuserinfo, found := userinfocache.Get(token)
-
 			for evt := range qrChan {
 				if evt.Event == "code" {
 					// Display QR code in terminal (useful for testing/developing)
@@ -384,11 +341,8 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
 					} else {
-						if found {
-							v := updateUserInfo(myuserinfo, "Qrcode", base64qrcode)
-							userinfocache.Set(token, v, cache.NoExpiration)
-							log.Info().Str("qrcode", base64qrcode).Msg("update cache userinfo with qr code")
-						}
+						updateGlobalUser("Qrcode", base64qrcode)
+						log.Info().Str("qrcode", base64qrcode).Msg("update global user with qr code")
 					}
 
 					//send QR code with webhook
@@ -412,10 +366,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
 					} else {
-						if found {
-							v := updateUserInfo(myuserinfo, "Qrcode", "")
-							userinfocache.Set(token, v, cache.NoExpiration)
-						}
+						updateGlobalUser("Qrcode", "")
 					}
 					log.Warn().Msg("QR timeout killing channel")
 					clientManager.DeleteWhatsmeowClient()
@@ -433,10 +384,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
 					} else {
-						if found {
-							v := updateUserInfo(myuserinfo, "Qrcode", "")
-							userinfocache.Set(token, v, cache.NoExpiration)
-						}
+						updateGlobalUser("Qrcode", "")
 					}
 				} else {
 					log.Info().Str("event", evt.Event).Msg("Login event")
@@ -590,16 +538,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postmap["type"] = "PairSuccess"
 		dowebhook = 1
 
-		myuserinfo, found := userinfocache.Get(mycli.token)
-		if !found {
-			log.Warn().Msg("No user info cached on pairing?")
-		} else {
-			txtid = myuserinfo.(Values).Get("Id")
-			token := myuserinfo.(Values).Get("Token")
-			v := updateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
-			userinfocache.Set(token, v, cache.NoExpiration)
-			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
-		}
+		txtid = globalUser.Get("Id")
+		token := globalUser.Get("Token")
+		updateGlobalUser("Jid", fmt.Sprintf("%s", jid))
+		log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
 
 		// Check if automatic history sync is enabled and trigger it after QR code is scanned
 		var daysToSyncHistory int
@@ -918,16 +860,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		// Save message to history regardless of skipMedia setting
-		// Get user's history setting from cache
-		var historyLimit int
-		userinfo, found := userinfocache.Get(mycli.token)
-		if found {
-			historyStr := userinfo.(Values).Get("History")
-			historyLimit, _ = strconv.Atoi(historyStr)
-		} else {
-			log.Warn().Str("userID", mycli.userID).Msg("User info not found in cache, skipping history")
-			historyLimit = 0
-		}
+		// Get user's history setting from globalUser
+		historyStr := globalUser.Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
 
 		if historyLimit > 0 {
 			messageType := "text"

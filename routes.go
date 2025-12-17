@@ -47,7 +47,6 @@ func (s *server) routes() {
 	adminRoutes.Handle("/users/{id}/full", s.DeleteUserComplete()).Methods("DELETE")
 
 	c := alice.New()
-	c = c.Append(s.authalice)
 	c = c.Append(hlog.NewHandler(routerLog))
 
 	c = c.Append(hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
@@ -57,7 +56,7 @@ func (s *server) routes() {
 			Int("status", status).
 			Int("size", size).
 			Dur("duration", duration).
-			Str("userid", r.Context().Value("userinfo").(Values).Get("Id")).
+			Str("userid", globalUser.Get("Id")).
 			Msg("Got API Request")
 	}))
 

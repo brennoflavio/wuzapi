@@ -19,7 +19,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/nfnt/resize"
-	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
 	"github.com/vincent-petithory/dataurl"
 	"go.mau.fi/whatsmeow"
@@ -117,77 +116,6 @@ func (s *server) GetHealth() http.HandlerFunc {
 
 // messageTypes moved to constants.go as supportedEventTypes
 
-func (s *server) authalice(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		var ctx context.Context
-		txtid := ""
-		name := ""
-		webhook := ""
-		jid := ""
-		events := ""
-		qrcode := ""
-
-		// Get token from headers or uri parameters
-		token := r.Header.Get("token")
-		if token == "" {
-			token = strings.Join(r.URL.Query()["token"], "")
-		}
-
-		myuserinfo, found := userinfocache.Get(token)
-		if !found {
-			log.Info().Msg("Looking for user information in DB")
-			// Checks DB from matching user and store user values in context
-			rows, err := s.db.Query("SELECT id,name,webhook,jid,events,qrcode,history FROM users WHERE token=$1 LIMIT 1", token)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, err)
-				return
-			}
-			defer rows.Close()
-			var history sql.NullInt64
-			for rows.Next() {
-				err = rows.Scan(&txtid, &name, &webhook, &jid, &events, &qrcode, &history)
-				if err != nil {
-					s.Respond(w, r, http.StatusInternalServerError, err)
-					return
-				}
-				historyStr := "0"
-				if history.Valid {
-					historyStr = fmt.Sprintf("%d", history.Int64)
-				}
-
-				// Debug logging for history value
-				log.Debug().Str("userId", txtid).Bool("historyValid", history.Valid).Int64("historyValue", history.Int64).Str("historyStr", historyStr).Msg("User authentication - history debug")
-
-				v := Values{map[string]string{
-					"Id":      txtid,
-					"Name":    name,
-					"Jid":     jid,
-					"Webhook": webhook,
-					"Token":   token,
-					"Events":  events,
-					"Qrcode":  qrcode,
-					"History": historyStr,
-				}}
-
-				userinfocache.Set(token, v, cache.NoExpiration)
-				log.Info().Str("name", name).Msg("User info name from DB")
-				ctx = context.WithValue(r.Context(), "userinfo", v)
-			}
-		} else {
-			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
-			log.Info().Str("name", myuserinfo.(Values).Get("name")).Msg("User info name from Cache")
-			txtid = myuserinfo.(Values).Get("Id")
-		}
-
-		if txtid == "" {
-			s.Respond(w, r, http.StatusUnauthorized, errors.New("unauthorized"))
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
 // Connects to Whatsapp Servers
 func (s *server) Connect() http.HandlerFunc {
 
@@ -198,10 +126,10 @@ func (s *server) Connect() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		webhook := r.Context().Value("userinfo").(Values).Get("Webhook")
-		jid := r.Context().Value("userinfo").(Values).Get("Jid")
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		webhook := globalUser.Get("Webhook")
+		jid := globalUser.Get("Jid")
+		txtid := globalUser.Get("Id")
+		token := globalUser.Get("Token")
 		eventstring := ""
 
 		// Decodes request BODY looking for events to subscribe
@@ -243,8 +171,7 @@ func (s *server) Connect() http.HandlerFunc {
 			log.Warn().Msg("Could not set events in users table")
 		}
 		log.Info().Str("events", eventstring).Msg("Setting subscribed events")
-		v := updateUserInfo(r.Context().Value("userinfo"), "Events", eventstring)
-		userinfocache.Set(token, v, cache.NoExpiration)
+		updateGlobalUser("Events", eventstring)
 
 		log.Info().Str("jid", jid).Msg("Attempt to connect")
 		killchannel[txtid] = make(chan bool, 1)
@@ -281,9 +208,8 @@ func (s *server) Connect() http.HandlerFunc {
 func (s *server) Disconnect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		jid := r.Context().Value("userinfo").(Values).Get("Jid")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		txtid := globalUser.Get("Id")
+		jid := globalUser.Get("Jid")
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -297,8 +223,7 @@ func (s *server) Disconnect() http.HandlerFunc {
 				log.Warn().Str("txtid", txtid).Msg("Could not set events in users table")
 			}
 			log.Info().Str("txtid", txtid).Msg("Update DB on disconnection")
-			v := updateUserInfo(r.Context().Value("userinfo"), "Events", "")
-			userinfocache.Set(token, v, cache.NoExpiration)
+			updateGlobalUser("Events", "")
 
 			response := map[string]interface{}{"Details": "Disconnected"}
 			responseJson, err := json.Marshal(response)
@@ -334,7 +259,7 @@ func (s *server) GetWebhook() http.HandlerFunc {
 
 		webhook := ""
 		events := ""
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		rows, err := s.db.Query("SELECT webhook,events FROM users WHERE id=$1 LIMIT 1", txtid)
 		if err != nil {
@@ -371,8 +296,7 @@ func (s *server) GetWebhook() http.HandlerFunc {
 // DeleteWebhook removes the webhook and clears events for a user
 func (s *server) DeleteWebhook() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		txtid := globalUser.Get("Id")
 
 		// Update the database to remove the webhook and clear events
 		_, err := s.db.Exec("UPDATE users SET webhook='', events='' WHERE id=$1", txtid)
@@ -381,10 +305,9 @@ func (s *server) DeleteWebhook() http.HandlerFunc {
 			return
 		}
 
-		// Update the user info cache
-		v := updateUserInfo(r.Context().Value("userinfo"), "Webhook", "")
-		v = updateUserInfo(v, "Events", "")
-		userinfocache.Set(token, v, cache.NoExpiration)
+		// Update the global user
+		updateGlobalUser("Webhook", "")
+		updateGlobalUser("Events", "")
 
 		response := map[string]interface{}{"Details": "Webhook and events deleted successfully"}
 		responseJson, err := json.Marshal(response)
@@ -404,8 +327,7 @@ func (s *server) UpdateWebhook() http.HandlerFunc {
 		Active     bool     `json:"active"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		txtid := globalUser.Get("Id")
 
 		decoder := json.NewDecoder(r.Body)
 		var t updateWebhookStruct
@@ -454,9 +376,8 @@ func (s *server) UpdateWebhook() http.HandlerFunc {
 			return
 		}
 
-		v := updateUserInfo(r.Context().Value("userinfo"), "Webhook", webhook)
-		v = updateUserInfo(v, "Events", eventstring)
-		userinfocache.Set(token, v, cache.NoExpiration)
+		updateGlobalUser("Webhook", webhook)
+		updateGlobalUser("Events", eventstring)
 
 		response := map[string]interface{}{"webhook": webhook, "events": validEvents, "active": t.Active}
 		responseJson, err := json.Marshal(response)
@@ -475,8 +396,7 @@ func (s *server) SetWebhook() http.HandlerFunc {
 		Events     []string `json:"events,omitempty"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		txtid := globalUser.Get("Id")
 
 		decoder := json.NewDecoder(r.Body)
 		var t webhookStruct
@@ -522,9 +442,8 @@ func (s *server) SetWebhook() http.HandlerFunc {
 			return
 		}
 
-		v := updateUserInfo(r.Context().Value("userinfo"), "Webhook", webhook)
-		v = updateUserInfo(v, "Events", eventstring)
-		userinfocache.Set(token, v, cache.NoExpiration)
+		updateGlobalUser("Webhook", webhook)
+		updateGlobalUser("Events", eventstring)
 
 		response := map[string]interface{}{"webhook": webhook}
 		responseJson, err := json.Marshal(response)
@@ -540,7 +459,7 @@ func (s *server) SetWebhook() http.HandlerFunc {
 func (s *server) GetQR() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 		code := ""
 
 		if clientManager.GetWhatsmeowClient() == nil {
@@ -591,8 +510,8 @@ func (s *server) GetQR() http.HandlerFunc {
 func (s *server) Logout() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		jid := r.Context().Value("userinfo").(Values).Get("Jid")
+		txtid := globalUser.Get("Id")
+		jid := globalUser.Get("Jid")
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -646,7 +565,6 @@ func (s *server) PairPhone() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -694,34 +612,30 @@ func (s *server) PairPhone() http.HandlerFunc {
 // Gets Connected and LoggedIn Status
 func (s *server) GetStatus() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userInfo := r.Context().Value("userinfo").(Values)
-
 		log.Info().
-			Str("Id", userInfo.Get("Id")).
-			Str("Jid", userInfo.Get("Jid")).
-			Str("Name", userInfo.Get("Name")).
-			Str("Webhook", userInfo.Get("Webhook")).
-			Str("Token", userInfo.Get("Token")).
-			Str("Events", userInfo.Get("Events")).
-			Str("History", userInfo.Get("History")).
+			Str("Id", globalUser.Get("Id")).
+			Str("Jid", globalUser.Get("Jid")).
+			Str("Name", globalUser.Get("Name")).
+			Str("Webhook", globalUser.Get("Webhook")).
+			Str("Token", globalUser.Get("Token")).
+			Str("Events", globalUser.Get("Events")).
+			Str("History", globalUser.Get("History")).
 			Msg("User info values")
-
-		txtid := userInfo.Get("Id")
 
 		isConnected := clientManager.GetWhatsmeowClient().IsConnected()
 		isLoggedIn := clientManager.GetWhatsmeowClient().IsLoggedIn()
 
 		response := map[string]interface{}{
-			"id":        txtid,
-			"name":      userInfo.Get("Name"),
+			"id":        globalUser.Get("Id"),
+			"name":      globalUser.Get("Name"),
 			"connected": isConnected,
 			"loggedIn":  isLoggedIn,
-			"token":     userInfo.Get("Token"),
-			"jid":       userInfo.Get("Jid"),
-			"webhook":   userInfo.Get("Webhook"),
-			"events":    userInfo.Get("Events"),
-			"qrcode":    userInfo.Get("Qrcode"),
-			"history":   userInfo.Get("History"),
+			"token":     globalUser.Get("Token"),
+			"jid":       globalUser.Get("Jid"),
+			"webhook":   globalUser.Get("Webhook"),
+			"events":    globalUser.Get("Events"),
+			"qrcode":    globalUser.Get("Qrcode"),
+			"history":   globalUser.Get("History"),
 		}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
@@ -748,7 +662,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -859,7 +773,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "document", t.Caption, "", historyLimit)
 
@@ -892,7 +806,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -1012,7 +926,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "audio", "", "", historyLimit)
 
@@ -1042,7 +956,7 @@ func (s *server) SendImage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -1199,7 +1113,7 @@ func (s *server) SendImage() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "image", t.Caption, "", historyLimit)
 
@@ -1233,7 +1147,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -1335,7 +1249,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "sticker", "", "", historyLimit)
 
@@ -1366,7 +1280,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -1491,7 +1405,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "video", t.Caption, "", historyLimit)
 
@@ -1520,7 +1434,7 @@ func (s *server) SendContact() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -1595,7 +1509,7 @@ func (s *server) SendContact() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "contact", t.Name, "", historyLimit)
 
@@ -1625,7 +1539,7 @@ func (s *server) SendLocation() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -1701,7 +1615,7 @@ func (s *server) SendLocation() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "location", t.Name, "", historyLimit)
 
@@ -1733,7 +1647,6 @@ func (s *server) SendButtons() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -1844,7 +1757,6 @@ func (s *server) SendList() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -1981,7 +1893,6 @@ func (s *server) SetStatusMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2039,7 +1950,7 @@ func (s *server) SendMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2139,7 +2050,7 @@ func (s *server) SendMessage() http.HandlerFunc {
 			return
 		}
 
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "text", t.Body, "", historyLimit)
 
@@ -2165,7 +2076,6 @@ func (s *server) SendPoll() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2239,7 +2149,6 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2306,7 +2215,6 @@ func (s *server) SendEditMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2395,7 +2303,7 @@ func (s *server) RequestHistorySync() http.HandlerFunc {
 		var resp whatsmeow.SendResponse
 		var err error
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2520,7 +2428,6 @@ func (s *server) CheckUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2579,7 +2486,6 @@ func (s *server) GetUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2642,7 +2548,6 @@ func (s *server) SendPresence() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2699,7 +2604,6 @@ func (s *server) GetAvatar() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2761,7 +2665,6 @@ func (s *server) GetContacts() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2797,7 +2700,6 @@ func (s *server) ChatPresence() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2860,7 +2762,7 @@ func (s *server) DownloadImage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		mimetype := ""
 		var imgdata []byte
@@ -2939,7 +2841,7 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		mimetype := ""
 		var docdata []byte
@@ -3018,7 +2920,7 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		mimetype := ""
 		var docdata []byte
@@ -3097,7 +2999,7 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		mimetype := ""
 		var docdata []byte
@@ -3173,7 +3075,6 @@ func (s *server) React() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3281,7 +3182,6 @@ func (s *server) MarkRead() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3356,7 +3256,6 @@ func (s *server) ListGroups() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3397,7 +3296,6 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3448,7 +3346,6 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3511,7 +3408,6 @@ func (s *server) GroupJoin() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3563,7 +3459,6 @@ func (s *server) CreateGroup() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3635,7 +3530,6 @@ func (s *server) SetGroupLocked() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3688,7 +3582,6 @@ func (s *server) SetDisappearingTimer() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3760,7 +3653,6 @@ func (s *server) RemoveGroupPhoto() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3815,7 +3707,6 @@ func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3903,7 +3794,6 @@ func (s *server) GetGroupInviteInfo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3954,7 +3844,6 @@ func (s *server) SetGroupPhoto() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -4040,7 +3929,6 @@ func (s *server) SetGroupName() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -4098,7 +3986,6 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -4155,7 +4042,6 @@ func (s *server) GroupLeave() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -4208,7 +4094,6 @@ func (s *server) SetGroupAnnounce() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -4260,7 +4145,6 @@ func (s *server) ListNewsletter() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -4637,42 +4521,24 @@ func (s *server) EditUser() http.HandlerFunc {
 			return
 		}
 
-		// Update userinfo cache for any modified fields
-		// First, get the current user token to find the cache entry
-		var currentToken string
-		err := s.db.Get(&currentToken, "SELECT token FROM users WHERE id = $1", userID)
-		if err != nil {
-			log.Error().Err(err).Str("userID", userID).Msg("Failed to get user token for cache update")
-		} else {
-			// Get current cached userinfo if it exists
-			if cachedUserInfo, found := userinfocache.Get(currentToken); found {
-				updatedUserInfo := cachedUserInfo.(Values)
-
-				// Update cache fields that were modified
-				if user.Name != "" {
-					updatedUserInfo = updateUserInfo(updatedUserInfo, "Name", user.Name).(Values)
-				}
-				if user.Token != "" {
-					// If token changed, we need to update the cache key
-					updatedUserInfo = updateUserInfo(updatedUserInfo, "Token", user.Token).(Values)
-					// Remove old cache entry and add new one with new token
-					userinfocache.Delete(currentToken)
-					currentToken = user.Token
-				}
-				if user.Webhook != "" {
-					updatedUserInfo = updateUserInfo(updatedUserInfo, "Webhook", user.Webhook).(Values)
-				}
-				if user.Events != "" {
-					updatedUserInfo = updateUserInfo(updatedUserInfo, "Events", user.Events).(Values)
-				}
-				if user.History != 0 {
-					updatedUserInfo = updateUserInfo(updatedUserInfo, "History", strconv.Itoa(user.History)).(Values)
-				}
-
-				// Update the cache
-				userinfocache.Set(currentToken, updatedUserInfo, cache.NoExpiration)
-				log.Info().Str("userID", userID).Msg("User info cache updated after edit")
+		// Update globalUser if we're editing the currently active user
+		if userID == globalUser.Get("Id") {
+			if user.Name != "" {
+				updateGlobalUser("Name", user.Name)
 			}
+			if user.Token != "" {
+				updateGlobalUser("Token", user.Token)
+			}
+			if user.Webhook != "" {
+				updateGlobalUser("Webhook", user.Webhook)
+			}
+			if user.Events != "" {
+				updateGlobalUser("Events", user.Events)
+			}
+			if user.History != 0 {
+				updateGlobalUser("History", strconv.Itoa(user.History))
+			}
+			log.Info().Str("userID", userID).Msg("Global user updated after edit")
 		}
 
 		s.respondWithJSON(w, http.StatusOK, map[string]interface{}{
@@ -4804,7 +4670,6 @@ func (s *server) DeleteUserComplete() http.HandlerFunc {
 		clientManager.DeleteWhatsmeowClient()
 		clientManager.DeleteMyClient()
 		clientManager.DeleteHTTPClient()
-		userinfocache.Delete(token)
 
 		// 4. Remove media files from local directories
 		userDirectory := filepath.Join(s.exPath, "files", id)
@@ -4898,7 +4763,7 @@ func (s *server) SetHistory() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		// Check if client exists and is connected
 
@@ -4928,14 +4793,9 @@ func (s *server) SetHistory() http.HandlerFunc {
 			return
 		}
 
-		token := r.Context().Value("userinfo").(Values).Get("Token")
-		if cachedUserInfo, found := userinfocache.Get(token); found {
-			updatedUserInfo := cachedUserInfo.(Values)
-			// Update history in cache
-			updatedUserInfo = updateUserInfo(updatedUserInfo, "History", strconv.Itoa(t.History)).(Values)
-			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
-			log.Info().Str("userID", txtid).Msg("User info cache updated with History configuration")
-		}
+		// Update global user
+		updateGlobalUser("History", strconv.Itoa(t.History))
+		log.Info().Str("userID", txtid).Msg("Global user updated with History configuration")
 
 		response := map[string]interface{}{
 			"Details": "History configured successfully",
@@ -4953,18 +4813,16 @@ func (s *server) SetHistory() http.HandlerFunc {
 // Get chat history
 func (s *server) GetHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		txtid := globalUser.Get("Id")
+		historyStr := globalUser.Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
 
 		// Debug logging
 		log.Info().Str("userId", txtid).Str("historyStr", historyStr).Int("historyLimit", historyLimit).Msg("GetHistory debug info")
 
 		if historyLimit == 0 {
-			// Before returning error, try refreshing the cache in case the DB was updated
-			token := r.Context().Value("userinfo").(Values).Get("Token")
-			log.Info().Str("userId", txtid).Str("token", token).Msg("History is 0, invalidating cache and trying fresh DB lookup")
-			userinfocache.Delete(token)
+			// Try refreshing from DB in case it was updated
+			log.Info().Str("userId", txtid).Msg("History is 0, trying fresh DB lookup")
 
 			// Re-fetch from database
 			var newHistoryValue sql.NullInt64
@@ -4975,7 +4833,8 @@ func (s *server) GetHistory() http.HandlerFunc {
 				newHistoryLimit := int(newHistoryValue.Int64)
 				log.Info().Str("userId", txtid).Int("newHistoryLimit", newHistoryLimit).Msg("Fresh DB lookup result")
 				if newHistoryLimit > 0 {
-					// Update the context for this request
+					// Update globalUser and use the new value
+					updateGlobalUser("History", strconv.Itoa(newHistoryLimit))
 					historyLimit = newHistoryLimit
 					log.Info().Str("userId", txtid).Int("historyLimit", historyLimit).Msg("Using fresh history value from DB")
 				}
@@ -5201,7 +5060,6 @@ func (s *server) RejectCall() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -5253,7 +5111,6 @@ func (s *server) RejectCall() http.HandlerFunc {
 // GetUserLID retrieves the Local ID (LID) for a given JID/Phone Number
 func (s *server) GetUserLID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -5316,7 +5173,6 @@ func (s *server) RequestUnavailableMessage() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		client := clientManager.GetWhatsmeowClient()
 
@@ -5401,7 +5257,6 @@ func (s *server) ArchiveChat() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
 		client := clientManager.GetWhatsmeowClient()
 
@@ -5471,7 +5326,7 @@ func (s *server) DownloadSticker() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := globalUser.Get("Id")
 
 		mimetype := ""
 		var stickerdata []byte
