@@ -1,47 +1,14 @@
 # API Reference
 
-For regular endpoints, use the `token` header with the user's token value.
-
 ### Request Requirements
 
 * Content-Type: application/json (JSON-encoded body)
-* Authentication: Include the `token` header in user endpoints.
 
 ---
 
 ## Admin Endpoints (User Management)
 
 The following endpoints are used to manage users in the system.
-
-
-## List All Users
-
-*GET /admin/users*
-
-Returns a list of registered users.
-
-Example Request:
-```
-curl -s -X GET http://localhost:8080/admin/users
-```
-
-Response:
-
-```json
-[
-  {
-    "id": 1,
-    "name": "admin",
-    "token": "H4Zbhwr72PBrtKdTIgS",
-    "webhook": "https://example.com/webhook",
-    "jid": "5491155553934@s.whatsapp.net",
-    "qrcode": "",
-    "connected": true,
-    "expiration": 0,
-    "events": "Message,ReadReceipt"
-  }
-]
-```
 
 ## Add User
 
