@@ -10,7 +10,6 @@ import (
 	"image/jpeg"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -2473,9 +2472,6 @@ func (s *server) DownloadImage() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		mimetype := ""
 		var imgdata []byte
 
@@ -2484,20 +2480,9 @@ func (s *server) DownloadImage() http.HandlerFunc {
 			return
 		}
 
-		// check/creates user directory for files
-		userDirectory := filepath.Join(s.exPath, "files", "user_"+txtid)
-		_, err := os.Stat(userDirectory)
-		if os.IsNotExist(err) {
-			errDir := os.MkdirAll(userDirectory, 0751)
-			if errDir != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not create user directory (%s)", userDirectory)))
-				return
-			}
-		}
-
 		decoder := json.NewDecoder(r.Body)
 		var t downloadImageStruct
-		err = decoder.Decode(&t)
+		err := decoder.Decode(&t)
 		if err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return
@@ -2552,9 +2537,6 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		mimetype := ""
 		var docdata []byte
 
@@ -2563,20 +2545,9 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 			return
 		}
 
-		// check/creates user directory for files
-		userDirectory := filepath.Join(s.exPath, "files", "user_"+txtid)
-		_, err := os.Stat(userDirectory)
-		if os.IsNotExist(err) {
-			errDir := os.MkdirAll(userDirectory, 0751)
-			if errDir != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not create user directory (%s)", userDirectory)))
-				return
-			}
-		}
-
 		decoder := json.NewDecoder(r.Body)
 		var t downloadDocumentStruct
-		err = decoder.Decode(&t)
+		err := decoder.Decode(&t)
 		if err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return
@@ -2631,9 +2602,6 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		mimetype := ""
 		var docdata []byte
 
@@ -2642,20 +2610,9 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 			return
 		}
 
-		// check/creates user directory for files
-		userDirectory := filepath.Join(s.exPath, "files", "user_"+txtid)
-		_, err := os.Stat(userDirectory)
-		if os.IsNotExist(err) {
-			errDir := os.MkdirAll(userDirectory, 0751)
-			if errDir != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not create user directory (%s)", userDirectory)))
-				return
-			}
-		}
-
 		decoder := json.NewDecoder(r.Body)
 		var t downloadVideoStruct
-		err = decoder.Decode(&t)
+		err := decoder.Decode(&t)
 		if err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return
@@ -2710,9 +2667,6 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		mimetype := ""
 		var docdata []byte
 
@@ -2721,20 +2675,9 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 			return
 		}
 
-		// check/creates user directory for files
-		userDirectory := filepath.Join(s.exPath, "files", "user_"+txtid)
-		_, err := os.Stat(userDirectory)
-		if os.IsNotExist(err) {
-			errDir := os.MkdirAll(userDirectory, 0751)
-			if errDir != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not create user directory (%s)", userDirectory)))
-				return
-			}
-		}
-
 		decoder := json.NewDecoder(r.Body)
 		var t downloadAudioStruct
-		err = decoder.Decode(&t)
+		err := decoder.Decode(&t)
 		if err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return
@@ -4272,9 +4215,6 @@ func (s *server) DownloadSticker() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		mimetype := ""
 		var stickerdata []byte
 
@@ -4283,20 +4223,9 @@ func (s *server) DownloadSticker() http.HandlerFunc {
 			return
 		}
 
-		// check/creates user directory for files
-		userDirectory := filepath.Join(s.exPath, "files", "user_"+txtid)
-		_, err := os.Stat(userDirectory)
-		if os.IsNotExist(err) {
-			errDir := os.MkdirAll(userDirectory, 0751)
-			if errDir != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not create user directory (%s)", userDirectory)))
-				return
-			}
-		}
-
 		decoder := json.NewDecoder(r.Body)
 		var t downloadStickerStruct
-		err = decoder.Decode(&t)
+		err := decoder.Decode(&t)
 		if err != nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return

@@ -13,29 +13,31 @@ type DatabaseConfig struct {
 	Path string
 }
 
-func InitializeDatabase(exPath, dataDirFlag string) (*sqlx.DB, error) {
-	config := getDatabaseConfig(exPath, dataDirFlag)
+func InitializeDatabase(appName string) (*sqlx.DB, error) {
+	config, err := getDatabaseConfig(appName)
+	if err != nil {
+		return nil, err
+	}
 	return initializeSQLite(config)
 }
 
-func getDatabaseConfig(exPath, dataDirFlag string) DatabaseConfig {
-	// Use datadir flag if provided, otherwise fall back to executable directory
-	dataPath := exPath
-	if dataDirFlag != "" {
-		dataPath = dataDirFlag
+func getDatabaseConfig(appName string) (DatabaseConfig, error) {
+	configPath, err := GetConfigPath(appName)
+	if err != nil {
+		return DatabaseConfig{}, fmt.Errorf("failed to get config path: %w", err)
 	}
 
 	return DatabaseConfig{
-		Path: filepath.Join(dataPath, "dbdata"),
-	}
+		Path: configPath,
+	}, nil
 }
 
 func initializeSQLite(config DatabaseConfig) (*sqlx.DB, error) {
 	if err := os.MkdirAll(config.Path, 0751); err != nil {
-		return nil, fmt.Errorf("could not create dbdata directory: %w", err)
+		return nil, fmt.Errorf("could not create data directory: %w", err)
 	}
 
-	dbPath := filepath.Join(config.Path, "users.db")
+	dbPath := filepath.Join(config.Path, "store.db")
 	db, err := sqlx.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)&_busy_timeout=3000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)

@@ -35,7 +35,6 @@ const (
 type server struct {
 	db     *sqlx.DB
 	router *mux.Router
-	exPath string
 	mode   ServerMode
 }
 
@@ -47,8 +46,7 @@ var (
 	skipMedia   = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
 	osName      = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
 	versionFlag = flag.Bool("version", false, "Display version information and exit")
-	dataDir     = flag.String("datadir", "", "Data directory for database and session files (defaults to executable directory)")
-	appName     = flag.String("appname", "wuzapi", "Application name used for data paths and database")
+	appName = flag.String("appname", "wuzapi", "Application name used for data paths and database")
 
 	container        *sqlstore.Container
 	clientManager    = NewClientManager()
@@ -211,14 +209,7 @@ func main() {
 		}
 	}
 
-	ex, err := os.Executable()
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to get executable path")
-		panic(err)
-	}
-	exPath := filepath.Dir(ex)
-
-	db, err := InitializeDatabase(exPath, *dataDir)
+	db, err := InitializeDatabase(*appName)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize database")
 		os.Exit(1)
@@ -254,8 +245,12 @@ func main() {
 		dbLog = waLog.Stdout("Database", *waDebug, false)
 	}
 
-	// Get database configuration
-	config := getDatabaseConfig(exPath, *dataDir)
+	// Get database configuration for whatsmeow store
+	config, err := getDatabaseConfig(*appName)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to get database config")
+		os.Exit(1)
+	}
 	storeConnStr := "file:" + filepath.Join(config.Path, "main.db") + "?_pragma=foreign_keys(1)&_busy_timeout=3000"
 	container, err = sqlstore.New(context.Background(), "sqlite", storeConnStr, dbLog)
 
@@ -267,7 +262,6 @@ func main() {
 	s := &server{
 		router: mux.NewRouter(),
 		db:     db,
-		exPath: exPath,
 		mode:   HTTP,
 	}
 	s.routes()
