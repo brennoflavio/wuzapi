@@ -119,6 +119,7 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 	switch migration.ID {
 	case 1:
 		// Create users table
+		// TODO: remove days_to_sync_history, always sync whole history
 		err = createTableIfNotExistsSQLite(tx, "users", `
 			CREATE TABLE users (
 				id TEXT PRIMARY KEY,
