@@ -330,7 +330,6 @@ func (s *server) PairPhone() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -1362,7 +1361,6 @@ func (s *server) SendButtons() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -1607,7 +1605,6 @@ func (s *server) SetStatusMessage() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -1860,7 +1857,6 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -1925,7 +1921,6 @@ func (s *server) SendEditMessage() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2139,7 +2134,6 @@ func (s *server) CheckUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -2196,7 +2190,6 @@ func (s *server) GetUser() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2259,7 +2252,6 @@ func (s *server) SendPresence() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -2314,7 +2306,6 @@ func (s *server) GetAvatar() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2376,7 +2367,6 @@ func (s *server) GetContacts() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -2410,7 +2400,6 @@ func (s *server) ChatPresence() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -2459,6 +2448,7 @@ func (s *server) ChatPresence() http.HandlerFunc {
 }
 
 // Downloads Image and returns base64 representation
+// TODO: return file path, not base64
 func (s *server) DownloadImage() http.HandlerFunc {
 
 	type downloadImageStruct struct {
@@ -2730,7 +2720,6 @@ func (s *server) React() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -2837,7 +2826,6 @@ func (s *server) MarkRead() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -2911,7 +2899,6 @@ func (s *server) ListGroups() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -2950,7 +2937,6 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3000,7 +2986,6 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3063,7 +3048,6 @@ func (s *server) GroupJoin() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3113,7 +3097,6 @@ func (s *server) CreateGroup() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3185,7 +3168,6 @@ func (s *server) SetGroupLocked() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3236,7 +3218,6 @@ func (s *server) SetDisappearingTimer() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3308,7 +3289,6 @@ func (s *server) RemoveGroupPhoto() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3361,7 +3341,6 @@ func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3449,7 +3428,6 @@ func (s *server) GetGroupInviteInfo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3498,7 +3476,6 @@ func (s *server) SetGroupPhoto() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3584,7 +3561,6 @@ func (s *server) SetGroupName() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3641,7 +3617,6 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3697,7 +3672,6 @@ func (s *server) GroupLeave() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3749,7 +3723,6 @@ func (s *server) SetGroupAnnounce() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -3799,7 +3772,6 @@ func (s *server) ListNewsletter() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -3949,7 +3921,6 @@ func (s *server) RejectCall() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
 
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
