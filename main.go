@@ -48,6 +48,7 @@ var (
 	osName      = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
 	versionFlag = flag.Bool("version", false, "Display version information and exit")
 	dataDir     = flag.String("datadir", "", "Data directory for database and session files (defaults to executable directory)")
+	appName     = flag.String("appname", "wuzapi", "Application name used for data paths and database")
 
 	container        *sqlstore.Container
 	clientManager    = NewClientManager()

@@ -27,7 +27,12 @@ func GetFileManager() *FileManager {
 	fileManagerOnce.Do(func() {
 		mediaDir := os.Getenv("WUZAPI_MEDIA_DIR")
 		if mediaDir == "" {
-			mediaDir = "./media"
+			// Use XDG cache path with appName
+			cachePath, err := GetCachePath(*appName)
+			if err != nil {
+				panic(fmt.Sprintf("failed to get cache path: %v", err))
+			}
+			mediaDir = filepath.Join(cachePath, "media")
 		}
 
 		mediaURL := os.Getenv("WUZAPI_MEDIA_URL")
