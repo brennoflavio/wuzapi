@@ -2,118 +2,76 @@ package main
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
-	"time"
-
-	"github.com/justinas/alice"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/hlog"
 )
 
-type Middleware = alice.Constructor
-
 func (s *server) routes() {
-
-	var routerLog zerolog.Logger
-	output := zerolog.ConsoleWriter{
-		Out:        os.Stdout,
-		TimeFormat: time.RFC3339,
-		NoColor:    true,
-	}
-	routerLog = zerolog.New(output).
-		With().
-		Timestamp().
-		Str("role", filepath.Base(os.Args[0])).
-		Str("host", *address).
-		Logger()
-
-	// Serve media files from disk
+	// TOOD: Remove media serving Serve media files from disk
 	mediaDir := GetFileManager().GetMediaDir()
 	s.router.PathPrefix("/media/").Handler(http.StripPrefix("/media/", http.FileServer(http.Dir(mediaDir))))
 
 	s.router.Handle("/health", s.GetHealth()).Methods("GET")
 
-	c := alice.New()
-	c = c.Append(hlog.NewHandler(routerLog))
+	s.router.Handle("/session/connect", s.Connect()).Methods("POST")
+	s.router.Handle("/session/disconnect", s.Disconnect()).Methods("POST")
+	s.router.Handle("/session/logout", s.Logout()).Methods("POST")
+	s.router.Handle("/session/status", s.GetStatus()).Methods("GET")
+	s.router.Handle("/session/qr", s.GetQR()).Methods("GET")
+	s.router.Handle("/session/pairphone", s.PairPhone()).Methods("POST")
+	s.router.Handle("/session/history", s.RequestHistorySync()).Methods("GET")
 
-	c = c.Append(hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
-		hlog.FromRequest(r).Info().
-			Str("method", r.Method).
-			Stringer("url", r.URL).
-			Int("status", status).
-			Int("size", size).
-			Dur("duration", duration).
-			Str("userid", globalUser.Get("Id")).
-			Msg("Got API Request")
-	}))
+	s.router.Handle("/session/history", s.SetHistory()).Methods("POST")
 
-	c = c.Append(hlog.RemoteAddrHandler("ip"))
-	c = c.Append(hlog.UserAgentHandler("user_agent"))
-	c = c.Append(hlog.RefererHandler("referer"))
-	c = c.Append(hlog.RequestIDHandler("req_id", "Request-Id"))
+	s.router.Handle("/chat/send/text", s.SendMessage()).Methods("POST")
+	s.router.Handle("/chat/delete", s.DeleteMessage()).Methods("POST")
+	s.router.Handle("/chat/send/image", s.SendImage()).Methods("POST")
+	s.router.Handle("/chat/send/audio", s.SendAudio()).Methods("POST")
+	s.router.Handle("/chat/send/document", s.SendDocument()).Methods("POST")
+	s.router.Handle("/chat/send/video", s.SendVideo()).Methods("POST")
+	s.router.Handle("/chat/send/sticker", s.SendSticker()).Methods("POST")
+	s.router.Handle("/chat/send/location", s.SendLocation()).Methods("POST")
+	s.router.Handle("/chat/send/contact", s.SendContact()).Methods("POST")
+	s.router.Handle("/chat/react", s.React()).Methods("POST")
+	s.router.Handle("/chat/send/buttons", s.SendButtons()).Methods("POST")
+	s.router.Handle("/chat/send/list", s.SendList()).Methods("POST")
+	s.router.Handle("/chat/send/poll", s.SendPoll()).Methods("POST")
+	s.router.Handle("/chat/send/edit", s.SendEditMessage()).Methods("POST")
+	s.router.Handle("/chat/request-unavailable-message", s.RequestUnavailableMessage()).Methods("POST")
+	s.router.Handle("/chat/archive", s.ArchiveChat()).Methods("POST")
 
-	s.router.Handle("/session/connect", c.Then(s.Connect())).Methods("POST")
-	s.router.Handle("/session/disconnect", c.Then(s.Disconnect())).Methods("POST")
-	s.router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
-	s.router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")
-	s.router.Handle("/session/qr", c.Then(s.GetQR())).Methods("GET")
-	s.router.Handle("/session/pairphone", c.Then(s.PairPhone())).Methods("POST")
-	s.router.Handle("/session/history", c.Then(s.RequestHistorySync())).Methods("GET")
+	s.router.Handle("/status/set/text", s.SetStatusMessage()).Methods("POST")
 
-	s.router.Handle("/session/history", c.Then(s.SetHistory())).Methods("POST")
+	s.router.Handle("/call/reject", s.RejectCall()).Methods("POST")
 
-	s.router.Handle("/chat/send/text", c.Then(s.SendMessage())).Methods("POST")
-	s.router.Handle("/chat/delete", c.Then(s.DeleteMessage())).Methods("POST")
-	s.router.Handle("/chat/send/image", c.Then(s.SendImage())).Methods("POST")
-	s.router.Handle("/chat/send/audio", c.Then(s.SendAudio())).Methods("POST")
-	s.router.Handle("/chat/send/document", c.Then(s.SendDocument())).Methods("POST")
-	s.router.Handle("/chat/send/video", c.Then(s.SendVideo())).Methods("POST")
-	s.router.Handle("/chat/send/sticker", c.Then(s.SendSticker())).Methods("POST")
-	s.router.Handle("/chat/send/location", c.Then(s.SendLocation())).Methods("POST")
-	s.router.Handle("/chat/send/contact", c.Then(s.SendContact())).Methods("POST")
-	s.router.Handle("/chat/react", c.Then(s.React())).Methods("POST")
-	s.router.Handle("/chat/send/buttons", c.Then(s.SendButtons())).Methods("POST")
-	s.router.Handle("/chat/send/list", c.Then(s.SendList())).Methods("POST")
-	s.router.Handle("/chat/send/poll", c.Then(s.SendPoll())).Methods("POST")
-	s.router.Handle("/chat/send/edit", c.Then(s.SendEditMessage())).Methods("POST")
-	s.router.Handle("/chat/request-unavailable-message", c.Then(s.RequestUnavailableMessage())).Methods("POST")
-	s.router.Handle("/chat/archive", c.Then(s.ArchiveChat())).Methods("POST")
+	s.router.Handle("/user/presence", s.SendPresence()).Methods("POST")
+	s.router.Handle("/user/info", s.GetUser()).Methods("POST")
+	s.router.Handle("/user/check", s.CheckUser()).Methods("POST")
+	s.router.Handle("/user/avatar", s.GetAvatar()).Methods("POST")
+	s.router.Handle("/user/contacts", s.GetContacts()).Methods("GET")
+	s.router.Handle("/user/lid/{jid}", s.GetUserLID()).Methods("GET")
 
-	s.router.Handle("/status/set/text", c.Then(s.SetStatusMessage())).Methods("POST")
+	s.router.Handle("/chat/presence", s.ChatPresence()).Methods("POST")
+	s.router.Handle("/chat/markread", s.MarkRead()).Methods("POST")
+	s.router.Handle("/chat/downloadimage", s.DownloadImage()).Methods("POST")
+	s.router.Handle("/chat/downloadvideo", s.DownloadVideo()).Methods("POST")
+	s.router.Handle("/chat/downloadaudio", s.DownloadAudio()).Methods("POST")
+	s.router.Handle("/chat/downloaddocument", s.DownloadDocument()).Methods("POST")
+	s.router.Handle("/chat/downloadsticker", s.DownloadSticker()).Methods("POST")
 
-	s.router.Handle("/call/reject", c.Then(s.RejectCall())).Methods("POST")
+	s.router.Handle("/group/create", s.CreateGroup()).Methods("POST")
+	s.router.Handle("/group/list", s.ListGroups()).Methods("GET")
+	s.router.Handle("/group/info", s.GetGroupInfo()).Methods("GET")
+	s.router.Handle("/group/invitelink", s.GetGroupInviteLink()).Methods("GET")
+	s.router.Handle("/group/photo", s.SetGroupPhoto()).Methods("POST")
+	s.router.Handle("/group/photo/remove", s.RemoveGroupPhoto()).Methods("POST")
+	s.router.Handle("/group/leave", s.GroupLeave()).Methods("POST")
+	s.router.Handle("/group/name", s.SetGroupName()).Methods("POST")
+	s.router.Handle("/group/topic", s.SetGroupTopic()).Methods("POST")
+	s.router.Handle("/group/announce", s.SetGroupAnnounce()).Methods("POST")
+	s.router.Handle("/group/locked", s.SetGroupLocked()).Methods("POST")
+	s.router.Handle("/group/ephemeral", s.SetDisappearingTimer()).Methods("POST")
+	s.router.Handle("/group/join", s.GroupJoin()).Methods("POST")
+	s.router.Handle("/group/inviteinfo", s.GetGroupInviteInfo()).Methods("POST")
+	s.router.Handle("/group/updateparticipants", s.UpdateGroupParticipants()).Methods("POST")
 
-	s.router.Handle("/user/presence", c.Then(s.SendPresence())).Methods("POST")
-	s.router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
-	s.router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
-	s.router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
-	s.router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
-	s.router.Handle("/user/lid/{jid}", c.Then(s.GetUserLID())).Methods("GET")
-
-	s.router.Handle("/chat/presence", c.Then(s.ChatPresence())).Methods("POST")
-	s.router.Handle("/chat/markread", c.Then(s.MarkRead())).Methods("POST")
-	s.router.Handle("/chat/downloadimage", c.Then(s.DownloadImage())).Methods("POST")
-	s.router.Handle("/chat/downloadvideo", c.Then(s.DownloadVideo())).Methods("POST")
-	s.router.Handle("/chat/downloadaudio", c.Then(s.DownloadAudio())).Methods("POST")
-	s.router.Handle("/chat/downloaddocument", c.Then(s.DownloadDocument())).Methods("POST")
-	s.router.Handle("/chat/downloadsticker", c.Then(s.DownloadSticker())).Methods("POST")
-
-	s.router.Handle("/group/create", c.Then(s.CreateGroup())).Methods("POST")
-	s.router.Handle("/group/list", c.Then(s.ListGroups())).Methods("GET")
-	s.router.Handle("/group/info", c.Then(s.GetGroupInfo())).Methods("GET")
-	s.router.Handle("/group/invitelink", c.Then(s.GetGroupInviteLink())).Methods("GET")
-	s.router.Handle("/group/photo", c.Then(s.SetGroupPhoto())).Methods("POST")
-	s.router.Handle("/group/photo/remove", c.Then(s.RemoveGroupPhoto())).Methods("POST")
-	s.router.Handle("/group/leave", c.Then(s.GroupLeave())).Methods("POST")
-	s.router.Handle("/group/name", c.Then(s.SetGroupName())).Methods("POST")
-	s.router.Handle("/group/topic", c.Then(s.SetGroupTopic())).Methods("POST")
-	s.router.Handle("/group/announce", c.Then(s.SetGroupAnnounce())).Methods("POST")
-	s.router.Handle("/group/locked", c.Then(s.SetGroupLocked())).Methods("POST")
-	s.router.Handle("/group/ephemeral", c.Then(s.SetDisappearingTimer())).Methods("POST")
-	s.router.Handle("/group/join", c.Then(s.GroupJoin())).Methods("POST")
-	s.router.Handle("/group/inviteinfo", c.Then(s.GetGroupInviteInfo())).Methods("POST")
-	s.router.Handle("/group/updateparticipants", c.Then(s.UpdateGroupParticipants())).Methods("POST")
-
-	s.router.Handle("/newsletter/list", c.Then(s.ListNewsletter())).Methods("GET")
+	s.router.Handle("/newsletter/list", s.ListNewsletter()).Methods("GET")
 }

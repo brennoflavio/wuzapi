@@ -17,7 +17,6 @@ require (
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/justinas/alice v1.2.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/vincent-petithory/dataurl v1.0.0
 	golang.org/x/image v0.32.0
@@ -34,7 +33,6 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/petermattis/goid v0.0.0-20250904145737-900bdf8bb490 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rs/xid v1.6.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.31 // indirect
 	golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6 // indirect
 	golang.org/x/term v0.37.0 // indirect
