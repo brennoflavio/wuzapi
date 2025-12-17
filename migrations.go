@@ -134,34 +134,6 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 			return fmt.Errorf("failed to create users table: %w", err)
 		}
 
-		// Create message_history table
-		err = createTableIfNotExistsSQLite(tx, "message_history", `
-			CREATE TABLE message_history (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				user_id TEXT NOT NULL,
-				chat_jid TEXT NOT NULL,
-				sender_jid TEXT NOT NULL,
-				message_id TEXT NOT NULL,
-				timestamp DATETIME NOT NULL,
-				message_type TEXT NOT NULL,
-				text_content TEXT,
-				media_link TEXT,
-				quoted_message_id TEXT,
-				datajson TEXT,
-				UNIQUE(user_id, message_id)
-			)`)
-		if err != nil {
-			return fmt.Errorf("failed to create message_history table: %w", err)
-		}
-
-		// Create message_history index
-		_, err = tx.Exec(`
-			CREATE INDEX IF NOT EXISTS idx_message_history_user_chat_timestamp
-			ON message_history (user_id, chat_jid, timestamp DESC)`)
-		if err != nil {
-			return fmt.Errorf("failed to create message_history index: %w", err)
-		}
-
 		// Create events table
 		err = createTableIfNotExistsSQLite(tx, "events", `
 			CREATE TABLE events (

@@ -16,12 +16,8 @@ type Middleware = alice.Constructor
 func (s *server) routes() {
 
 	var routerLog zerolog.Logger
-	logOutput := os.Stdout
-	if s.mode == Stdio {
-		logOutput = os.Stderr
-	}
 	output := zerolog.ConsoleWriter{
-		Out:        logOutput,
+		Out:        os.Stdout,
 		TimeFormat: time.RFC3339,
 		NoColor:    true,
 	}
@@ -81,7 +77,6 @@ func (s *server) routes() {
 	s.router.Handle("/chat/send/list", c.Then(s.SendList())).Methods("POST")
 	s.router.Handle("/chat/send/poll", c.Then(s.SendPoll())).Methods("POST")
 	s.router.Handle("/chat/send/edit", c.Then(s.SendEditMessage())).Methods("POST")
-	s.router.Handle("/chat/history", c.Then(s.GetHistory())).Methods("GET")
 	s.router.Handle("/chat/request-unavailable-message", c.Then(s.RequestUnavailableMessage())).Methods("POST")
 	s.router.Handle("/chat/archive", c.Then(s.ArchiveChat())).Methods("POST")
 

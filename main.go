@@ -30,7 +30,6 @@ type ServerMode int
 
 const (
 	HTTP ServerMode = iota
-	Stdio
 )
 
 type server struct {
@@ -48,7 +47,6 @@ var (
 	skipMedia   = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
 	osName      = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
 	versionFlag = flag.Bool("version", false, "Display version information and exit")
-	mode        = flag.String("mode", "http", "Server mode: http or stdio")
 	dataDir     = flag.String("datadir", "", "Data directory for database and session files (defaults to executable directory)")
 
 	container        *sqlstore.Container
@@ -188,14 +186,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	// In stdio mode, always log to stderr to avoid interfering with JSON responses on stdout
-	logOutput := os.Stdout
-	if *mode == "stdio" {
-		logOutput = os.Stderr
-	}
-
 	output := zerolog.ConsoleWriter{
-		Out:        logOutput,
+		Out:        os.Stdout,
 		TimeFormat: "2006-01-02 15:04:05 -07:00",
 		NoColor:    true,
 	}
@@ -271,26 +263,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	serverMode := HTTP
-	if *mode == "stdio" {
-		serverMode = Stdio
-	}
-
 	s := &server{
 		router: mux.NewRouter(),
 		db:     db,
 		exPath: exPath,
-		mode:   serverMode,
+		mode:   HTTP,
 	}
 	s.routes()
 
 	s.connectOnStartup()
 
-	if serverMode == Stdio {
-		startStdioMode(s)
-	} else {
-		startHTTPMode(s)
-	}
+	startHTTPMode(s)
 }
 
 func startHTTPMode(s *server) {
@@ -337,15 +320,6 @@ func startHTTPMode(s *server) {
 	}()
 	log.Info().Str("address", *address).Str("port", *port).Msg("Server started. Waiting for connections...")
 	select {}
-}
-
-func startStdioMode(s *server) {
-	stdioServer := NewStdioServer(s)
-	if err := stdioServer.Start(); err != nil {
-		log.Error().Err(err).Msg("Stdio server error")
-		os.Exit(1)
-	}
-	log.Info().Msg("Stdio server exited properly")
 }
 
 // loadOrCreateGlobalUser loads the first user from the database or creates a default one if none exists.

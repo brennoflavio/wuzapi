@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -422,8 +421,6 @@ func (s *server) SendDocument() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -534,10 +531,6 @@ func (s *server) SendDocument() http.HandlerFunc {
 			return
 		}
 
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "document", t.Caption, "", historyLimit)
-
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -566,8 +559,6 @@ func (s *server) SendAudio() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -687,10 +678,6 @@ func (s *server) SendAudio() http.HandlerFunc {
 			return
 		}
 
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "audio", "", "", historyLimit)
-
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -716,8 +703,6 @@ func (s *server) SendImage() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -874,10 +859,6 @@ func (s *server) SendImage() http.HandlerFunc {
 			return
 		}
 
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "image", t.Caption, "", historyLimit)
-
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -907,8 +888,6 @@ func (s *server) SendSticker() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -1010,10 +989,6 @@ func (s *server) SendSticker() http.HandlerFunc {
 			return
 		}
 
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "sticker", "", "", historyLimit)
-
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -1040,8 +1015,6 @@ func (s *server) SendVideo() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
@@ -1166,10 +1139,6 @@ func (s *server) SendVideo() http.HandlerFunc {
 			return
 		}
 
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "video", t.Caption, "", historyLimit)
-
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -1194,9 +1163,6 @@ func (s *server) SendContact() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -1270,10 +1236,6 @@ func (s *server) SendContact() http.HandlerFunc {
 			return
 		}
 
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "contact", t.Name, "", historyLimit)
-
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -1299,9 +1261,6 @@ func (s *server) SendLocation() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		txtid := globalUser.Get("Id")
-
 		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
@@ -1375,10 +1334,6 @@ func (s *server) SendLocation() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
 		}
-
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "location", t.Name, "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -1810,10 +1765,6 @@ func (s *server) SendMessage() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
 		}
-
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "text", t.Body, "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -4042,246 +3993,6 @@ func (s *server) SetHistory() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 		} else {
 			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// Get chat history
-func (s *server) GetHistory() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := globalUser.Get("Id")
-		historyStr := globalUser.Get("History")
-		historyLimit, _ := strconv.Atoi(historyStr)
-
-		// Debug logging
-		log.Info().Str("userId", txtid).Str("historyStr", historyStr).Int("historyLimit", historyLimit).Msg("GetHistory debug info")
-
-		if historyLimit == 0 {
-			// Try refreshing from DB in case it was updated
-			log.Info().Str("userId", txtid).Msg("History is 0, trying fresh DB lookup")
-
-			// Re-fetch from database
-			var newHistoryValue sql.NullInt64
-			err := s.db.QueryRow("SELECT COALESCE(history, 0) FROM users WHERE id = $1", txtid).Scan(&newHistoryValue)
-			if err != nil {
-				log.Error().Err(err).Str("userId", txtid).Msg("Failed to fetch history from database")
-			} else {
-				newHistoryLimit := int(newHistoryValue.Int64)
-				log.Info().Str("userId", txtid).Int("newHistoryLimit", newHistoryLimit).Msg("Fresh DB lookup result")
-				if newHistoryLimit > 0 {
-					// Update globalUser and use the new value
-					updateGlobalUser("History", strconv.Itoa(newHistoryLimit))
-					historyLimit = newHistoryLimit
-					log.Info().Str("userId", txtid).Int("historyLimit", historyLimit).Msg("Using fresh history value from DB")
-				}
-			}
-
-			if historyLimit == 0 {
-				s.Respond(w, r, http.StatusNotImplemented, errors.New("message history is disabled for this user"))
-				return
-			}
-		}
-		chatJID := r.URL.Query().Get("chat_jid")
-		if chatJID == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("chat_jid is required"))
-			return
-		}
-
-		// If chat_jid is "index", return mapping of all instances to their chat_jids
-		if chatJID == "index" {
-			query := `
-				SELECT user_id, chat_jid, MAX(timestamp) as last_message_time
-				FROM message_history
-				GROUP BY user_id, chat_jid
-				ORDER BY user_id, last_message_time DESC`
-
-			type ChatMapping struct {
-				UserID          string `json:"user_id" db:"user_id"`
-				ChatJID         string `json:"chat_jid" db:"chat_jid"`
-				LastMessageTime string `json:"last_message_time" db:"last_message_time"`
-			}
-
-			var mappings []ChatMapping
-			err := s.db.Select(&mappings, query)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get chat mappings: %w", err))
-				return
-			}
-
-			// Build the response map with chats ordered by most recent message
-			type ChatInfo struct {
-				ChatJID     string `json:"chat_jid"`
-				LastUpdated string `json:"last_updated"`
-			}
-
-			result := make(map[string][]ChatInfo)
-			for _, mapping := range mappings {
-				// Parse the timestamp and format it properly to remove monotonic clock info
-				var formattedTime string
-				if parsedTime, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", mapping.LastMessageTime); err == nil {
-					formattedTime = parsedTime.Format(time.RFC3339Nano)
-				} else if parsedTime, err := time.Parse(time.RFC3339Nano, mapping.LastMessageTime); err == nil {
-					formattedTime = parsedTime.Format(time.RFC3339Nano)
-				} else {
-					// If parsing fails, clean up the monotonic clock part manually
-					formattedTime = strings.Split(mapping.LastMessageTime, " m=")[0]
-				}
-
-				chatInfo := ChatInfo{
-					ChatJID:     mapping.ChatJID,
-					LastUpdated: formattedTime,
-				}
-				result[mapping.UserID] = append(result[mapping.UserID], chatInfo)
-			}
-
-			responseJson, err := json.Marshal(result)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, err)
-			} else {
-				s.Respond(w, r, http.StatusOK, string(responseJson))
-			}
-			return
-		}
-
-		limitStr := r.URL.Query().Get("limit")
-		limit := 50 // Default limit
-		if limitStr != "" {
-			var err error
-			limit, err = strconv.Atoi(limitStr)
-			if err != nil {
-				s.Respond(w, r, http.StatusBadRequest, errors.New("invalid limit"))
-				return
-			}
-		}
-
-		query := `
-			SELECT id, user_id, chat_jid, sender_jid, message_id, timestamp, message_type, text_content, media_link, COALESCE(quoted_message_id, '') as quoted_message_id, COALESCE(datajson, '') as datajson
-			FROM message_history
-			WHERE user_id = ? AND chat_jid = ?
-			ORDER BY timestamp DESC
-			LIMIT ?`
-
-		var messages []HistoryMessage
-		err := s.db.Select(&messages, query, txtid, chatJID, limit)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get message history: %w", err))
-			return
-		}
-
-		responseJson, err := json.Marshal(messages)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// syncHistoryForChat syncs history for a specific chat
-func (s *server) syncHistoryForChat(ctx context.Context, userID string, chatJID types.JID, count int) error {
-	chatJIDStr := chatJID.String()
-
-	// Try to get last message info for this chat from database
-	query := `
-		SELECT message_id, chat_jid, sender_jid
-		FROM message_history
-		WHERE user_id = ? AND chat_jid = ?
-		ORDER BY timestamp DESC
-		LIMIT 1`
-
-	var lastMsg struct {
-		MessageID string `db:"message_id"`
-		ChatJID   string `db:"chat_jid"`
-		SenderJID string `db:"sender_jid"`
-	}
-
-	var lastMessageInfo *types.MessageInfo
-	err := s.db.Get(&lastMsg, query, userID, chatJIDStr)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("failed to get last message from history: %w", err)
-	}
-
-	if err == nil && lastMsg.MessageID != "" {
-		// Parse sender JID
-		var senderJID types.JID
-		if lastMsg.SenderJID != "" && lastMsg.SenderJID != "me" {
-			var pErr error
-			senderJID, pErr = types.ParseJID(lastMsg.SenderJID)
-			if pErr != nil {
-				log.Warn().Err(pErr).Str("senderJID", lastMsg.SenderJID).Msg("Failed to parse sender JID from history, using empty JID")
-				senderJID = types.EmptyJID
-			}
-		} else {
-			senderJID = types.EmptyJID
-		}
-
-		// MessageInfo embeds MessageSource which contains Chat, Sender, IsGroup
-		lastMessageInfo = &types.MessageInfo{
-			MessageSource: types.MessageSource{
-				Chat:    chatJID,
-				Sender:  senderJID,
-				IsGroup: chatJID.Server == types.GroupServer || chatJID.Server == types.BroadcastServer,
-			},
-			ID: lastMsg.MessageID,
-		}
-	} else {
-		// If no last message found, create MessageInfo with just the chat
-		lastMessageInfo = &types.MessageInfo{
-			MessageSource: types.MessageSource{
-				Chat:    chatJID,
-				IsGroup: chatJID.Server == types.GroupServer || chatJID.Server == types.BroadcastServer,
-			},
-		}
-	}
-
-	// Build history sync request
-	historyMsg := clientManager.GetWhatsmeowClient().BuildHistorySyncRequest(lastMessageInfo, count)
-	if historyMsg == nil {
-		return errors.New("failed to build history sync request")
-	}
-
-	// Send the history sync request
-	myClient := clientManager.GetMyClient()
-	if myClient == nil || myClient.WAClient == nil || myClient.WAClient.Store == nil || myClient.WAClient.Store.ID == nil {
-		return errors.New("client store not available")
-	}
-
-	_, err = clientManager.GetWhatsmeowClient().SendMessage(
-		ctx,
-		myClient.WAClient.Store.ID.ToNonAD(),
-		historyMsg,
-		whatsmeow.SendRequestExtra{Peer: true},
-	)
-
-	if err != nil {
-		log.Error().
-			Str("userID", userID).
-			Str("chatJID", chatJIDStr).
-			Err(err).
-			Msg("Failed to send WhatsApp history sync request")
-		return fmt.Errorf("failed to send history sync request: %w", err)
-	}
-
-	log.Info().
-		Str("userID", userID).
-		Str("chatJID", chatJIDStr).
-		Int("count", count).
-		Msg("WhatsApp history sync request sent successfully")
-
-	return nil
-}
-
-// save outgoing message to history
-func (s *server) saveOutgoingMessageToHistory(userID, chatJID, messageID, messageType, textContent, mediaLink string, historyLimit int) {
-	if historyLimit > 0 {
-		err := s.saveMessageToHistory(userID, chatJID, "me", messageID, messageType, textContent, mediaLink, "", "")
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to save outgoing message to history")
-		} else {
-			err = s.trimMessageHistory(userID, chatJID, historyLimit)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to trim message history")
-			}
 		}
 	}
 }
