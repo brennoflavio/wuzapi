@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/patrickmn/go-cache"
@@ -163,24 +161,6 @@ func (s *server) startClient(userID string, textjid string) {
 	// Store the MyClient in clientManager
 	clientManager.SetMyClient(&mycli)
 
-	httpClient := resty.New()
-	httpClient.SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
-	if *waDebug == "DEBUG" {
-		httpClient.SetDebug(true)
-	}
-	httpClient.SetTimeout(30 * time.Second)
-	httpClient.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
-	httpClient.OnError(func(req *resty.Request, err error) {
-		if v, ok := err.(*resty.ResponseError); ok {
-			// v.Response contains the last response from the server
-			// v.Err contains the original error
-			log.Debug().Str("response", v.Response.String()).Msg("resty error")
-			log.Error().Err(v.Err).Msg("resty error")
-		}
-	})
-
-	clientManager.SetHTTPClient(httpClient)
-
 	if client.Store.ID == nil {
 		// No ID stored, new login
 		qrChan, err := client.GetQRChannel(context.Background())
@@ -240,7 +220,6 @@ func (s *server) startClient(userID string, textjid string) {
 					log.Warn().Msg("QR timeout killing channel")
 					clientManager.DeleteWhatsmeowClient()
 					clientManager.DeleteMyClient()
-					clientManager.DeleteHTTPClient()
 					select {
 					case killchannel[userID] <- true:
 					default:
@@ -304,7 +283,6 @@ func (s *server) startClient(userID string, textjid string) {
 
 			clientManager.DeleteWhatsmeowClient()
 			clientManager.DeleteMyClient()
-			clientManager.DeleteHTTPClient()
 
 			sqlStmt := `UPDATE users SET qrcode='', connected=0 WHERE id=$1`
 			_, dbErr := s.db.Exec(sqlStmt, userID)
@@ -333,7 +311,6 @@ func (s *server) startClient(userID string, textjid string) {
 			client.Disconnect()
 			clientManager.DeleteWhatsmeowClient()
 			clientManager.DeleteMyClient()
-			clientManager.DeleteHTTPClient()
 			sqlStmt := `UPDATE users SET qrcode='', connected=0 WHERE id=$1`
 			_, err := s.db.Exec(sqlStmt, userID)
 			if err != nil {

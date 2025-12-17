@@ -5,7 +5,6 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/go-resty/resty/v2 v2.16.5
 	github.com/gorilla/mux v1.8.1
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
