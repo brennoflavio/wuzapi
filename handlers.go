@@ -69,18 +69,17 @@ func (s *server) GetHealth() http.HandlerFunc {
 		}
 
 		clientManager.RLock()
-		activeConnections := len(clientManager.whatsmeowClients)
+		activeConnections := 0
 		connectedUsers := 0
 		loggedInUsers := 0
 
-		for _, client := range clientManager.whatsmeowClients {
-			if client != nil {
-				if client.IsConnected() {
-					connectedUsers++
-				}
-				if client.IsLoggedIn() {
-					loggedInUsers++
-				}
+		if clientManager.whatsmeowClient != nil {
+			activeConnections = 1
+			if clientManager.whatsmeowClient.IsConnected() {
+				connectedUsers = 1
+			}
+			if clientManager.whatsmeowClient.IsLoggedIn() {
+				loggedInUsers = 1
 			}
 		}
 		clientManager.RUnlock()
@@ -214,8 +213,8 @@ func (s *server) Connect() http.HandlerFunc {
 			return
 		}
 
-		if clientManager.GetWhatsmeowClient(txtid) != nil {
-			isConnected := clientManager.GetWhatsmeowClient(txtid).IsConnected()
+		if clientManager.GetWhatsmeowClient() != nil {
+			isConnected := clientManager.GetWhatsmeowClient().IsConnected()
 			if isConnected == true {
 				s.Respond(w, r, http.StatusInternalServerError, errors.New("already connected"))
 				return
@@ -255,8 +254,8 @@ func (s *server) Connect() http.HandlerFunc {
 			log.Warn().Msg("Waiting 10 seconds")
 			time.Sleep(10000 * time.Millisecond)
 
-			if clientManager.GetWhatsmeowClient(txtid) != nil {
-				if !clientManager.GetWhatsmeowClient(txtid).IsConnected() {
+			if clientManager.GetWhatsmeowClient() != nil {
+				if !clientManager.GetWhatsmeowClient().IsConnected() {
 					s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to Connect"))
 					return
 				}
@@ -286,12 +285,12 @@ func (s *server) Disconnect() http.HandlerFunc {
 		jid := r.Context().Value("userinfo").(Values).Get("Jid")
 		token := r.Context().Value("userinfo").(Values).Get("Token")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
-		if clientManager.GetWhatsmeowClient(txtid).IsConnected() == true {
-			//if clientManager.GetWhatsmeowClient(txtid).IsLoggedIn() == true {
+		if clientManager.GetWhatsmeowClient().IsConnected() == true {
+			//if clientManager.GetWhatsmeowClient().IsLoggedIn() == true {
 			log.Info().Str("jid", jid).Msg("Disconnection successfull")
 			_, err := s.db.Exec("UPDATE users SET connected=0,events=$1 WHERE id=$2", "", txtid)
 			if err != nil {
@@ -304,7 +303,7 @@ func (s *server) Disconnect() http.HandlerFunc {
 			response := map[string]interface{}{"Details": "Disconnected"}
 			responseJson, err := json.Marshal(response)
 
-			clientManager.DeleteWhatsmeowClient(txtid)
+			clientManager.DeleteWhatsmeowClient()
 			select {
 			case killchannel[txtid] <- true:
 			default:
@@ -442,7 +441,7 @@ func (s *server) UpdateWebhook() http.HandlerFunc {
 
 			// Update MyClient if connected - integrated UpdateEvents functionality
 			if len(validEvents) > 0 {
-				clientManager.UpdateMyClientSubscriptions(txtid, validEvents)
+				clientManager.UpdateMyClientSubscriptions(validEvents)
 				log.Info().Strs("events", validEvents).Str("user", txtid).Msg("Updated event subscriptions")
 			}
 		} else {
@@ -510,7 +509,7 @@ func (s *server) SetWebhook() http.HandlerFunc {
 
 			// Update MyClient if connected - integrated UpdateEvents functionality
 			if len(validEvents) > 0 {
-				clientManager.UpdateMyClientSubscriptions(txtid, validEvents)
+				clientManager.UpdateMyClientSubscriptions(validEvents)
 				log.Info().Strs("events", validEvents).Str("user", txtid).Msg("Updated event subscriptions")
 			}
 		} else {
@@ -544,11 +543,11 @@ func (s *server) GetQR() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		code := ""
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		} else {
-			if clientManager.GetWhatsmeowClient(txtid).IsConnected() == false {
+			if clientManager.GetWhatsmeowClient().IsConnected() == false {
 				s.Respond(w, r, http.StatusInternalServerError, errors.New("not connected"))
 				return
 			}
@@ -570,7 +569,7 @@ func (s *server) GetQR() http.HandlerFunc {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
 			}
-			if clientManager.GetWhatsmeowClient(txtid).IsLoggedIn() == true {
+			if clientManager.GetWhatsmeowClient().IsLoggedIn() == true {
 				s.Respond(w, r, http.StatusInternalServerError, errors.New("already logged in"))
 				return
 			}
@@ -595,27 +594,27 @@ func (s *server) Logout() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		jid := r.Context().Value("userinfo").(Values).Get("Jid")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		} else {
-			if clientManager.GetWhatsmeowClient(txtid).IsLoggedIn() == true &&
-				clientManager.GetWhatsmeowClient(txtid).IsConnected() == true {
-				err := clientManager.GetWhatsmeowClient(txtid).Logout(context.Background())
+			if clientManager.GetWhatsmeowClient().IsLoggedIn() == true &&
+				clientManager.GetWhatsmeowClient().IsConnected() == true {
+				err := clientManager.GetWhatsmeowClient().Logout(context.Background())
 				if err != nil {
 					log.Error().Str("jid", jid).Msg("Could not perform logout")
 					s.Respond(w, r, http.StatusInternalServerError, errors.New("could not perform logout"))
 					return
 				} else {
 					log.Info().Str("jid", jid).Msg("Logged out")
-					clientManager.DeleteWhatsmeowClient(txtid)
+					clientManager.DeleteWhatsmeowClient()
 					select {
 					case killchannel[txtid] <- true:
 					default:
 					}
 				}
 			} else {
-				if clientManager.GetWhatsmeowClient(txtid).IsConnected() == true {
+				if clientManager.GetWhatsmeowClient().IsConnected() == true {
 					log.Warn().Str("jid", jid).Msg("Ignoring logout as it was not logged in")
 					s.Respond(w, r, http.StatusInternalServerError, errors.New("could not logout as it was not logged in"))
 					return
@@ -647,9 +646,9 @@ func (s *server) PairPhone() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -667,14 +666,14 @@ func (s *server) PairPhone() http.HandlerFunc {
 			return
 		}
 
-		isLoggedIn := clientManager.GetWhatsmeowClient(txtid).IsLoggedIn()
+		isLoggedIn := clientManager.GetWhatsmeowClient().IsLoggedIn()
 		if isLoggedIn {
 			log.Error().Msg(fmt.Sprintf("%s", "already paired"))
 			s.Respond(w, r, http.StatusBadRequest, errors.New("already paired"))
 			return
 		}
 
-		linkingCode, err := clientManager.GetWhatsmeowClient(txtid).PairPhone(context.Background(), t.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+		linkingCode, err := clientManager.GetWhatsmeowClient().PairPhone(context.Background(), t.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -709,8 +708,8 @@ func (s *server) GetStatus() http.HandlerFunc {
 
 		txtid := userInfo.Get("Id")
 
-		isConnected := clientManager.GetWhatsmeowClient(txtid).IsConnected()
-		isLoggedIn := clientManager.GetWhatsmeowClient(txtid).IsLoggedIn()
+		isConnected := clientManager.GetWhatsmeowClient().IsConnected()
+		isLoggedIn := clientManager.GetWhatsmeowClient().IsLoggedIn()
 
 		response := map[string]interface{}{
 			"id":        txtid,
@@ -753,7 +752,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -790,7 +789,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -805,7 +804,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 				return
 			} else {
 				filedata = dataURL.Data
-				uploaded, err = clientManager.GetWhatsmeowClient(txtid).Upload(context.Background(), filedata, whatsmeow.MediaDocument)
+				uploaded, err = clientManager.GetWhatsmeowClient().Upload(context.Background(), filedata, whatsmeow.MediaDocument)
 				if err != nil {
 					s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to upload file: %v", err)))
 					return
@@ -854,7 +853,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 			msg.DocumentMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
@@ -897,7 +896,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -928,7 +927,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -943,7 +942,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 				return
 			} else {
 				filedata = dataURL.Data
-				uploaded, err = clientManager.GetWhatsmeowClient(txtid).Upload(context.Background(), filedata, whatsmeow.MediaAudio)
+				uploaded, err = clientManager.GetWhatsmeowClient().Upload(context.Background(), filedata, whatsmeow.MediaAudio)
 				if err != nil {
 					s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to upload file: %v", err)))
 					return
@@ -1007,7 +1006,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 			msg.AudioMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
@@ -1047,7 +1046,7 @@ func (s *server) SendImage() http.HandlerFunc {
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1078,7 +1077,7 @@ func (s *server) SendImage() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -1117,7 +1116,7 @@ func (s *server) SendImage() http.HandlerFunc {
 			return
 		}
 
-		uploaded, err = clientManager.GetWhatsmeowClient(txtid).Upload(context.Background(), filedata, whatsmeow.MediaImage)
+		uploaded, err = clientManager.GetWhatsmeowClient().Upload(context.Background(), filedata, whatsmeow.MediaImage)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to upload file: %v", err)))
 			return
@@ -1194,7 +1193,7 @@ func (s *server) SendImage() http.HandlerFunc {
 			msg.ImageMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
@@ -1238,7 +1237,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1269,7 +1268,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -1292,7 +1291,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 			return
 		}
 
-		uploaded, err := clientManager.GetWhatsmeowClient(txtid).Upload(context.Background(), processedData, whatsmeow.MediaImage)
+		uploaded, err := clientManager.GetWhatsmeowClient().Upload(context.Background(), processedData, whatsmeow.MediaImage)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Failed to upload file: %v", err)))
 			return
@@ -1330,7 +1329,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 			msg.StickerMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
@@ -1371,7 +1370,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 		msgid := ""
 		var resp whatsmeow.SendResponse
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1402,7 +1401,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -1442,7 +1441,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 			return
 		}
 
-		uploaded, err = clientManager.GetWhatsmeowClient(txtid).Upload(context.Background(), filedata, whatsmeow.MediaVideo)
+		uploaded, err = clientManager.GetWhatsmeowClient().Upload(context.Background(), filedata, whatsmeow.MediaVideo)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to upload file: %v", err)))
 			return
@@ -1486,7 +1485,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 			msg.VideoMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
@@ -1523,7 +1522,7 @@ func (s *server) SendContact() http.HandlerFunc {
 
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1559,7 +1558,7 @@ func (s *server) SendContact() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -1590,7 +1589,7 @@ func (s *server) SendContact() http.HandlerFunc {
 			msg.ContactMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
@@ -1628,7 +1627,7 @@ func (s *server) SendLocation() http.HandlerFunc {
 
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1664,7 +1663,7 @@ func (s *server) SendLocation() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -1696,7 +1695,7 @@ func (s *server) SendLocation() http.HandlerFunc {
 			msg.LocationMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
@@ -1734,9 +1733,9 @@ func (s *server) SendButtons() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1778,7 +1777,7 @@ func (s *server) SendButtons() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -1800,7 +1799,7 @@ func (s *server) SendButtons() http.HandlerFunc {
 			Buttons:     buttons,
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, &waE2E.Message{ViewOnceMessage: &waE2E.FutureProofMessage{
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, &waE2E.Message{ViewOnceMessage: &waE2E.FutureProofMessage{
 			Message: &waE2E.Message{
 				ButtonsMessage: msg2,
 			},
@@ -1845,8 +1844,8 @@ func (s *server) SendList() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -1921,7 +1920,7 @@ func (s *server) SendList() http.HandlerFunc {
 
 		msgid := req.Id
 		if msgid == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		}
 
 		// Create the message with ListMessage
@@ -1947,7 +1946,7 @@ func (s *server) SendList() http.HandlerFunc {
 			},
 		}
 
-		resp, err := clientManager.GetWhatsmeowClient(txtid).SendMessage(
+		resp, err := clientManager.GetWhatsmeowClient().SendMessage(
 			context.Background(),
 			recipient,
 			msg,
@@ -1982,9 +1981,9 @@ func (s *server) SetStatusMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2007,7 +2006,7 @@ func (s *server) SetStatusMessage() http.HandlerFunc {
 
 		msg := proto.String(t.Body)
 
-		err = clientManager.GetWhatsmeowClient(txtid).SetStatusMessage(context.Background(), *msg)
+		err = clientManager.GetWhatsmeowClient().SetStatusMessage(context.Background(), *msg)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending status message: %v", err)))
 			return
@@ -2042,7 +2041,7 @@ func (s *server) SendMessage() http.HandlerFunc {
 
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2076,7 +2075,7 @@ func (s *server) SendMessage() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -2134,7 +2133,7 @@ func (s *server) SendMessage() http.HandlerFunc {
 			msg.ExtendedTextMessage.ContextInfo.IsForwarded = proto.Bool(true)
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
@@ -2166,9 +2165,9 @@ func (s *server) SendPoll() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2200,7 +2199,7 @@ func (s *server) SendPoll() http.HandlerFunc {
 		}
 
 		if req.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = req.Id
 		}
@@ -2211,8 +2210,8 @@ func (s *server) SendPoll() http.HandlerFunc {
 			return
 		}
 
-		pollMessage := clientManager.GetWhatsmeowClient(txtid).BuildPollCreation(req.Header, req.Options, 1)
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, pollMessage, whatsmeow.SendRequestExtra{ID: msgid})
+		pollMessage := clientManager.GetWhatsmeowClient().BuildPollCreation(req.Header, req.Options, 1)
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, pollMessage, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to send poll: %v", err)))
 			return
@@ -2240,9 +2239,9 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2276,7 +2275,7 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 			return
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, clientManager.GetWhatsmeowClient(txtid).BuildRevoke(recipient, types.EmptyJID, msgid))
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, clientManager.GetWhatsmeowClient().BuildRevoke(recipient, types.EmptyJID, msgid))
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
@@ -2307,9 +2306,9 @@ func (s *server) SendEditMessage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2369,7 +2368,7 @@ func (s *server) SendEditMessage() http.HandlerFunc {
 			msg.ExtendedTextMessage.ContextInfo.MentionedJID = t.ContextInfo.MentionedJID
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, clientManager.GetWhatsmeowClient(txtid).BuildEdit(recipient, msgid, msg))
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, clientManager.GetWhatsmeowClient().BuildEdit(recipient, msgid, msg))
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending edit message: %v", err)))
 			return
@@ -2398,7 +2397,7 @@ func (s *server) RequestHistorySync() http.HandlerFunc {
 
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2445,7 +2444,7 @@ func (s *server) RequestHistorySync() http.HandlerFunc {
 			}
 		}
 
-		historyMsg := clientManager.GetWhatsmeowClient(txtid).BuildHistorySyncRequest(info, count)
+		historyMsg := clientManager.GetWhatsmeowClient().BuildHistorySyncRequest(info, count)
 		if historyMsg == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("Failed to build history sync request."))
 			return
@@ -2462,7 +2461,7 @@ func (s *server) RequestHistorySync() http.HandlerFunc {
 			Time("oldest_msg_timestamp", info.Timestamp).
 			Msg("Preparing to send history sync request")
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), clientManager.GetMyClient(txtid).WAClient.Store.ID.ToNonAD(), historyMsg, whatsmeow.SendRequestExtra{Peer: true})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), clientManager.GetMyClient().WAClient.Store.ID.ToNonAD(), historyMsg, whatsmeow.SendRequestExtra{Peer: true})
 		if err != nil {
 			log.Error().
 				Str("userID", txtid).
@@ -2526,7 +2525,7 @@ func (s *server) SendTemplate() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
-		if clientManager.GetWhatsmeowClient(userid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2570,7 +2569,7 @@ func (s *server) SendTemplate() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+			msgid = clientManager.GetWhatsmeowClient().GenerateMessageID()
 		} else {
 			msgid = t.Id
 		}
@@ -2642,7 +2641,7 @@ func (s *server) SendTemplate() http.HandlerFunc {
 		},
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(userid).SendMessage(context.Background(),recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(),recipient, msg, whatsmeow.SendRequestExtra{ID: msgid})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
@@ -2681,9 +2680,9 @@ func (s *server) CheckUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2701,7 +2700,7 @@ func (s *server) CheckUser() http.HandlerFunc {
 			return
 		}
 
-		resp, err := clientManager.GetWhatsmeowClient(txtid).IsOnWhatsApp(context.Background(), t.Phone)
+		resp, err := clientManager.GetWhatsmeowClient().IsOnWhatsApp(context.Background(), t.Phone)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to check if users are on WhatsApp: %s", err)))
 			return
@@ -2740,9 +2739,9 @@ func (s *server) GetUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2768,7 +2767,7 @@ func (s *server) GetUser() http.HandlerFunc {
 			}
 			jids = append(jids, jid)
 		}
-		resp, err := clientManager.GetWhatsmeowClient(txtid).GetUserInfo(context.Background(), jids)
+		resp, err := clientManager.GetWhatsmeowClient().GetUserInfo(context.Background(), jids)
 
 		if err != nil {
 			msg := fmt.Sprintf("Failed to get user info: %v", err)
@@ -2803,9 +2802,9 @@ func (s *server) SendPresence() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2832,7 +2831,7 @@ func (s *server) SendPresence() http.HandlerFunc {
 
 		log.Info().Str("presence", pre.Type).Msg("Your global presence status")
 
-		err = clientManager.GetWhatsmeowClient(txtid).SendPresence(context.Background(), presence)
+		err = clientManager.GetWhatsmeowClient().SendPresence(context.Background(), presence)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("failure sending presence to Whatsapp servers"))
 			return
@@ -2860,9 +2859,9 @@ func (s *server) GetAvatar() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2889,7 +2888,7 @@ func (s *server) GetAvatar() http.HandlerFunc {
 		var pic *types.ProfilePictureInfo
 
 		existingID := ""
-		pic, err = clientManager.GetWhatsmeowClient(txtid).GetProfilePictureInfo(context.Background(), jid, &whatsmeow.GetProfilePictureParams{
+		pic, err = clientManager.GetWhatsmeowClient().GetProfilePictureInfo(context.Background(), jid, &whatsmeow.GetProfilePictureParams{
 			Preview:    t.Preview,
 			ExistingID: existingID,
 		})
@@ -2922,15 +2921,15 @@ func (s *server) GetContacts() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 
 		result := map[types.JID]types.ContactInfo{}
-		result, err := clientManager.GetWhatsmeowClient(txtid).Store.Contacts.GetAllContacts(context.Background())
+		result, err := clientManager.GetWhatsmeowClient().Store.Contacts.GetAllContacts(context.Background())
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
@@ -2958,9 +2957,9 @@ func (s *server) ChatPresence() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -2989,7 +2988,7 @@ func (s *server) ChatPresence() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).SendChatPresence(context.Background(), jid, types.ChatPresence(t.State), types.ChatPresenceMedia(t.Media))
+		err = clientManager.GetWhatsmeowClient().SendChatPresence(context.Background(), jid, types.ChatPresence(t.State), types.ChatPresenceMedia(t.Media))
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("failure sending chat presence to Whatsapp servers"))
 			return
@@ -3026,7 +3025,7 @@ func (s *server) DownloadImage() http.HandlerFunc {
 		mimetype := ""
 		var imgdata []byte
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3063,7 +3062,7 @@ func (s *server) DownloadImage() http.HandlerFunc {
 		img := msg.GetImageMessage()
 
 		if img != nil {
-			imgdata, err = clientManager.GetWhatsmeowClient(txtid).Download(context.Background(), img)
+			imgdata, err = clientManager.GetWhatsmeowClient().Download(context.Background(), img)
 			if err != nil {
 				log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to download image")
 				msg := fmt.Sprintf("failed to download image %v", err)
@@ -3105,7 +3104,7 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 		mimetype := ""
 		var docdata []byte
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3142,7 +3141,7 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 		doc := msg.GetDocumentMessage()
 
 		if doc != nil {
-			docdata, err = clientManager.GetWhatsmeowClient(txtid).Download(context.Background(), doc)
+			docdata, err = clientManager.GetWhatsmeowClient().Download(context.Background(), doc)
 			if err != nil {
 				log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to download document")
 				msg := fmt.Sprintf("failed to download document %v", err)
@@ -3184,7 +3183,7 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 		mimetype := ""
 		var docdata []byte
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3221,7 +3220,7 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 		doc := msg.GetVideoMessage()
 
 		if doc != nil {
-			docdata, err = clientManager.GetWhatsmeowClient(txtid).Download(context.Background(), doc)
+			docdata, err = clientManager.GetWhatsmeowClient().Download(context.Background(), doc)
 			if err != nil {
 				log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to download video")
 				msg := fmt.Sprintf("failed to download video %v", err)
@@ -3263,7 +3262,7 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 		mimetype := ""
 		var docdata []byte
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3300,7 +3299,7 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 		doc := msg.GetAudioMessage()
 
 		if doc != nil {
-			docdata, err = clientManager.GetWhatsmeowClient(txtid).Download(context.Background(), doc)
+			docdata, err = clientManager.GetWhatsmeowClient().Download(context.Background(), doc)
 			if err != nil {
 				log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to download audio")
 				msg := fmt.Sprintf("failed to download audio %v", err)
@@ -3334,9 +3333,9 @@ func (s *server) React() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3410,7 +3409,7 @@ func (s *server) React() http.HandlerFunc {
 			},
 		}
 
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, msg)
+		resp, err = clientManager.GetWhatsmeowClient().SendMessage(context.Background(), recipient, msg)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
@@ -3442,9 +3441,9 @@ func (s *server) MarkRead() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3491,7 +3490,7 @@ func (s *server) MarkRead() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).MarkRead(context.Background(), t.Id, time.Now(), jidChat, jidSender)
+		err = clientManager.GetWhatsmeowClient().MarkRead(context.Background(), t.Id, time.Now(), jidChat, jidSender)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("failure marking messages as read"))
 			return
@@ -3517,14 +3516,14 @@ func (s *server) ListGroups() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 
-		resp, err := clientManager.GetWhatsmeowClient(txtid).GetJoinedGroups(r.Context())
+		resp, err := clientManager.GetWhatsmeowClient().GetJoinedGroups(r.Context())
 
 		if err != nil {
 			msg := fmt.Sprintf("failed to get group list: %v", err)
@@ -3558,9 +3557,9 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3578,7 +3577,7 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 			return
 		}
 
-		resp, err := clientManager.GetWhatsmeowClient(txtid).GetGroupInfo(context.Background(), group)
+		resp, err := clientManager.GetWhatsmeowClient().GetGroupInfo(context.Background(), group)
 
 		if err != nil {
 			msg := fmt.Sprintf("Failed to get group info: %v", err)
@@ -3609,9 +3608,9 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3641,7 +3640,7 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 			return
 		}
 
-		resp, err := clientManager.GetWhatsmeowClient(txtid).GetGroupInviteLink(context.Background(), group, reset)
+		resp, err := clientManager.GetWhatsmeowClient().GetGroupInviteLink(context.Background(), group, reset)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("Failed to get group invite link")
@@ -3672,9 +3671,9 @@ func (s *server) GroupJoin() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3692,7 +3691,7 @@ func (s *server) GroupJoin() http.HandlerFunc {
 			return
 		}
 
-		_, err = clientManager.GetWhatsmeowClient(txtid).JoinGroupWithLink(context.Background(), t.Code)
+		_, err = clientManager.GetWhatsmeowClient().JoinGroupWithLink(context.Background(), t.Code)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to join group")
@@ -3724,9 +3723,9 @@ func (s *server) CreateGroup() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3765,7 +3764,7 @@ func (s *server) CreateGroup() http.HandlerFunc {
 			Participants: participantJIDs,
 		}
 
-		groupInfo, err := clientManager.GetWhatsmeowClient(txtid).CreateGroup(r.Context(), req)
+		groupInfo, err := clientManager.GetWhatsmeowClient().CreateGroup(r.Context(), req)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to create group")
@@ -3796,9 +3795,9 @@ func (s *server) SetGroupLocked() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3817,7 +3816,7 @@ func (s *server) SetGroupLocked() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).SetGroupLocked(context.Background(), group, t.Locked)
+		err = clientManager.GetWhatsmeowClient().SetGroupLocked(context.Background(), group, t.Locked)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to set group locked")
@@ -3849,9 +3848,9 @@ func (s *server) SetDisappearingTimer() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3890,7 +3889,7 @@ func (s *server) SetDisappearingTimer() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).SetDisappearingTimer(context.Background(), group, duration, time.Now())
+		err = clientManager.GetWhatsmeowClient().SetDisappearingTimer(context.Background(), group, duration, time.Now())
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to set disappearing timer")
@@ -3921,9 +3920,9 @@ func (s *server) RemoveGroupPhoto() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -3942,7 +3941,7 @@ func (s *server) RemoveGroupPhoto() http.HandlerFunc {
 			return
 		}
 
-		_, err = clientManager.GetWhatsmeowClient(txtid).SetGroupPhoto(context.Background(), group, nil)
+		_, err = clientManager.GetWhatsmeowClient().SetGroupPhoto(context.Background(), group, nil)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to remove group photo")
@@ -3976,9 +3975,9 @@ func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4033,7 +4032,7 @@ func (s *server) UpdateGroupParticipants() http.HandlerFunc {
 			return
 		}
 
-		_, err = clientManager.GetWhatsmeowClient(txtid).UpdateGroupParticipants(context.Background(), group, phoneParsed, action)
+		_, err = clientManager.GetWhatsmeowClient().UpdateGroupParticipants(context.Background(), group, phoneParsed, action)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to change participant group")
@@ -4064,9 +4063,9 @@ func (s *server) GetGroupInviteInfo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4084,7 +4083,7 @@ func (s *server) GetGroupInviteInfo() http.HandlerFunc {
 			return
 		}
 
-		groupInfo, err := clientManager.GetWhatsmeowClient(txtid).GetGroupInfoFromLink(context.Background(), t.Code)
+		groupInfo, err := clientManager.GetWhatsmeowClient().GetGroupInfoFromLink(context.Background(), t.Code)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to get group invite info")
@@ -4115,9 +4114,9 @@ func (s *server) SetGroupPhoto() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4169,7 +4168,7 @@ func (s *server) SetGroupPhoto() http.HandlerFunc {
 			return
 		}
 
-		picture_id, err := clientManager.GetWhatsmeowClient(txtid).SetGroupPhoto(context.Background(), group, filedata)
+		picture_id, err := clientManager.GetWhatsmeowClient().SetGroupPhoto(context.Background(), group, filedata)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to set group photo")
@@ -4201,9 +4200,9 @@ func (s *server) SetGroupName() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4227,7 +4226,7 @@ func (s *server) SetGroupName() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).SetGroupName(context.Background(), group, t.Name)
+		err = clientManager.GetWhatsmeowClient().SetGroupName(context.Background(), group, t.Name)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to set group name")
@@ -4259,9 +4258,9 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4285,7 +4284,7 @@ func (s *server) SetGroupTopic() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).SetGroupTopic(context.Background(), group, "", "", t.Topic)
+		err = clientManager.GetWhatsmeowClient().SetGroupTopic(context.Background(), group, "", "", t.Topic)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to set group topic")
@@ -4316,9 +4315,9 @@ func (s *server) GroupLeave() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4337,7 +4336,7 @@ func (s *server) GroupLeave() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).LeaveGroup(context.Background(), group)
+		err = clientManager.GetWhatsmeowClient().LeaveGroup(context.Background(), group)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to leave group")
@@ -4369,9 +4368,9 @@ func (s *server) SetGroupAnnounce() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -4390,7 +4389,7 @@ func (s *server) SetGroupAnnounce() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).SetGroupAnnounce(context.Background(), group, t.Announce)
+		err = clientManager.GetWhatsmeowClient().SetGroupAnnounce(context.Background(), group, t.Announce)
 
 		if err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to set group announce")
@@ -4421,14 +4420,14 @@ func (s *server) ListNewsletter() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 
-		resp, err := clientManager.GetWhatsmeowClient(txtid).GetSubscribedNewsletters(context.Background())
+		resp, err := clientManager.GetWhatsmeowClient().GetSubscribedNewsletters(context.Background())
 
 		if err != nil {
 			msg := fmt.Sprintf("failed to get newsletter list: %v", err)
@@ -4505,9 +4504,9 @@ func (s *server) ListUsers() http.HandlerFunc {
 
 			isConnected := false
 			isLoggedIn := false
-			if clientManager.GetWhatsmeowClient(user.Id) != nil {
-				isConnected = clientManager.GetWhatsmeowClient(user.Id).IsConnected()
-				isLoggedIn = clientManager.GetWhatsmeowClient(user.Id).IsLoggedIn()
+			if clientManager.GetWhatsmeowClient() != nil {
+				isConnected = clientManager.GetWhatsmeowClient().IsConnected()
+				isLoggedIn = clientManager.GetWhatsmeowClient().IsLoggedIn()
 			}
 
 			//"connected":  user.Connected.Bool,
@@ -4940,7 +4939,7 @@ func (s *server) DeleteUserComplete() http.HandlerFunc {
 		}
 
 		// 1. Logout and disconnect instance
-		if client := clientManager.GetWhatsmeowClient(id); client != nil {
+		if client := clientManager.GetWhatsmeowClient(); client != nil {
 			if client.IsConnected() {
 				log.Info().Str("id", id).Msg("Logging out user")
 				client.Logout(context.Background())
@@ -4962,9 +4961,9 @@ func (s *server) DeleteUserComplete() http.HandlerFunc {
 		}
 
 		// 3. Cleanup from memory
-		clientManager.DeleteWhatsmeowClient(id)
-		clientManager.DeleteMyClient(id)
-		clientManager.DeleteHTTPClient(id)
+		clientManager.DeleteWhatsmeowClient()
+		clientManager.DeleteMyClient()
+		clientManager.DeleteHTTPClient()
 		userinfocache.Delete(token)
 
 		// 4. Remove media files from local directories
@@ -5063,7 +5062,7 @@ func (s *server) SetHistory() http.HandlerFunc {
 
 		// Check if client exists and is connected
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("no session"))
 			return
 		}
@@ -5301,18 +5300,18 @@ func (s *server) syncHistoryForChat(ctx context.Context, userID string, chatJID 
 	}
 
 	// Build history sync request
-	historyMsg := clientManager.GetWhatsmeowClient(userID).BuildHistorySyncRequest(lastMessageInfo, count)
+	historyMsg := clientManager.GetWhatsmeowClient().BuildHistorySyncRequest(lastMessageInfo, count)
 	if historyMsg == nil {
 		return errors.New("failed to build history sync request")
 	}
 
 	// Send the history sync request
-	myClient := clientManager.GetMyClient(userID)
+	myClient := clientManager.GetMyClient()
 	if myClient == nil || myClient.WAClient == nil || myClient.WAClient.Store == nil || myClient.WAClient.Store.ID == nil {
 		return errors.New("client store not available")
 	}
 
-	_, err = clientManager.GetWhatsmeowClient(userID).SendMessage(
+	_, err = clientManager.GetWhatsmeowClient().SendMessage(
 		ctx,
 		myClient.WAClient.Store.ID.ToNonAD(),
 		historyMsg,
@@ -5362,9 +5361,9 @@ func (s *server) RejectCall() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -5393,7 +5392,7 @@ func (s *server) RejectCall() http.HandlerFunc {
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).RejectCall(context.Background(), callFrom, t.CallID)
+		err = clientManager.GetWhatsmeowClient().RejectCall(context.Background(), callFrom, t.CallID)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error rejecting call: %v", err)))
 			return
@@ -5414,9 +5413,9 @@ func (s *server) RejectCall() http.HandlerFunc {
 // GetUserLID retrieves the Local ID (LID) for a given JID/Phone Number
 func (s *server) GetUserLID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -5437,7 +5436,7 @@ func (s *server) GetUserLID() http.HandlerFunc {
 			return
 		}
 
-		client := clientManager.GetWhatsmeowClient(txtid)
+		client := clientManager.GetWhatsmeowClient()
 
 		// Get the LID for this phone number from the store
 		lid, err := client.Store.LIDs.GetLIDForPN(context.Background(), jid)
@@ -5477,9 +5476,9 @@ func (s *server) RequestUnavailableMessage() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		client := clientManager.GetWhatsmeowClient(txtid)
+		client := clientManager.GetWhatsmeowClient()
 
 		if client == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -5562,9 +5561,9 @@ func (s *server) ArchiveChat() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		_ = r.Context().Value("userinfo").(Values).Get("Id") // txtid unused after single-user refactor
 
-		client := clientManager.GetWhatsmeowClient(txtid)
+		client := clientManager.GetWhatsmeowClient()
 
 		if client == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
@@ -5637,7 +5636,7 @@ func (s *server) DownloadSticker() http.HandlerFunc {
 		mimetype := ""
 		var stickerdata []byte
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		if clientManager.GetWhatsmeowClient() == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -5674,7 +5673,7 @@ func (s *server) DownloadSticker() http.HandlerFunc {
 		sticker := msg.GetStickerMessage()
 
 		if sticker != nil {
-			stickerdata, err = clientManager.GetWhatsmeowClient(txtid).Download(context.Background(), sticker)
+			stickerdata, err = clientManager.GetWhatsmeowClient().Download(context.Background(), sticker)
 			if err != nil {
 				log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("failed to download sticker")
 				msg := fmt.Sprintf("failed to download sticker %v", err)

@@ -321,7 +321,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 	}
 
 	// Now we can use the client with the manager
-	clientManager.SetWhatsmeowClient(userID, client)
+	clientManager.SetWhatsmeowClient(client)
 
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
 	store.DeviceProps.Os = osName
@@ -330,7 +330,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
 
 	// Store the MyClient in clientManager
-	clientManager.SetMyClient(userID, &mycli)
+	clientManager.SetMyClient(&mycli)
 
 	httpClient := resty.New()
 	httpClient.SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
@@ -348,7 +348,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 		}
 	})
 
-	clientManager.SetHTTPClient(userID, httpClient)
+	clientManager.SetHTTPClient(httpClient)
 
 	if client.Store.ID == nil {
 		// No ID stored, new login
@@ -418,9 +418,9 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 						}
 					}
 					log.Warn().Msg("QR timeout killing channel")
-					clientManager.DeleteWhatsmeowClient(userID)
-					clientManager.DeleteMyClient(userID)
-					clientManager.DeleteHTTPClient(userID)
+					clientManager.DeleteWhatsmeowClient()
+					clientManager.DeleteMyClient()
+					clientManager.DeleteHTTPClient()
 					select {
 					case killchannel[userID] <- true:
 					default:
@@ -485,9 +485,9 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 				Int("attempts", maxConnectionRetries).
 				Msg("Failed to connect to WhatsApp after all retry attempts")
 
-			clientManager.DeleteWhatsmeowClient(userID)
-			clientManager.DeleteMyClient(userID)
-			clientManager.DeleteHTTPClient(userID)
+			clientManager.DeleteWhatsmeowClient()
+			clientManager.DeleteMyClient()
+			clientManager.DeleteHTTPClient()
 
 			sqlStmt := `UPDATE users SET qrcode='', connected=0 WHERE id=$1`
 			_, dbErr := s.db.Exec(sqlStmt, userID)
@@ -514,9 +514,9 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 		case <-killchannel[userID]:
 			log.Info().Str("userid", userID).Msg("Received kill signal")
 			client.Disconnect()
-			clientManager.DeleteWhatsmeowClient(userID)
-			clientManager.DeleteMyClient(userID)
-			clientManager.DeleteHTTPClient(userID)
+			clientManager.DeleteWhatsmeowClient()
+			clientManager.DeleteMyClient()
+			clientManager.DeleteHTTPClient()
 			sqlStmt := `UPDATE users SET qrcode='', connected=0 WHERE id=$1`
 			_, err := s.db.Exec(sqlStmt, userID)
 			if err != nil {

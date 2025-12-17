@@ -213,7 +213,7 @@ func updateUserInfo(values interface{}, field string, value string) interface{} 
 func callHook(myurl string, payload map[string]string, userID string) {
 	log.Info().Str("url", myurl).Str("userID", userID).Msg("Sending POST to client with retry logic")
 
-	client := clientManager.GetHTTPClient(userID)
+	client := clientManager.GetHTTPClient()
 
 	// Retry settings
 	maxRetries := 1
@@ -302,7 +302,7 @@ func callHook(myurl string, payload map[string]string, userID string) {
 func callHookFile(myurl string, payload map[string]string, userID string, file string) error {
 	log.Info().Str("file", file).Str("url", myurl).Msg("Sending POST with retry logic")
 
-	client := clientManager.GetHTTPClient(userID)
+	client := clientManager.GetHTTPClient()
 
 	maxRetries := 1
 	if *webhookRetryEnabled {

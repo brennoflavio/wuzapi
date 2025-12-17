@@ -9,78 +9,74 @@ import (
 
 type ClientManager struct {
 	sync.RWMutex
-	whatsmeowClients map[string]*whatsmeow.Client
-	httpClients      map[string]*resty.Client
-	myClients        map[string]*MyClient
+	whatsmeowClient *whatsmeow.Client
+	httpClient      *resty.Client
+	myClient        *MyClient
 }
 
 func NewClientManager() *ClientManager {
-	return &ClientManager{
-		whatsmeowClients: make(map[string]*whatsmeow.Client),
-		httpClients:      make(map[string]*resty.Client),
-		myClients:        make(map[string]*MyClient),
-	}
+	return &ClientManager{}
 }
 
-func (cm *ClientManager) SetWhatsmeowClient(userID string, client *whatsmeow.Client) {
+func (cm *ClientManager) SetWhatsmeowClient(client *whatsmeow.Client) {
 	cm.Lock()
 	defer cm.Unlock()
-	cm.whatsmeowClients[userID] = client
+	cm.whatsmeowClient = client
 }
 
-func (cm *ClientManager) GetWhatsmeowClient(userID string) *whatsmeow.Client {
+func (cm *ClientManager) GetWhatsmeowClient() *whatsmeow.Client {
 	cm.RLock()
 	defer cm.RUnlock()
-	return cm.whatsmeowClients[userID]
+	return cm.whatsmeowClient
 }
 
-func (cm *ClientManager) DeleteWhatsmeowClient(userID string) {
+func (cm *ClientManager) DeleteWhatsmeowClient() {
 	cm.Lock()
 	defer cm.Unlock()
-	delete(cm.whatsmeowClients, userID)
+	cm.whatsmeowClient = nil
 }
 
-func (cm *ClientManager) SetHTTPClient(userID string, client *resty.Client) {
+func (cm *ClientManager) SetHTTPClient(client *resty.Client) {
 	cm.Lock()
 	defer cm.Unlock()
-	cm.httpClients[userID] = client
+	cm.httpClient = client
 }
 
-func (cm *ClientManager) GetHTTPClient(userID string) *resty.Client {
+func (cm *ClientManager) GetHTTPClient() *resty.Client {
 	cm.RLock()
 	defer cm.RUnlock()
-	return cm.httpClients[userID]
+	return cm.httpClient
 }
 
-func (cm *ClientManager) DeleteHTTPClient(userID string) {
+func (cm *ClientManager) DeleteHTTPClient() {
 	cm.Lock()
 	defer cm.Unlock()
-	delete(cm.httpClients, userID)
+	cm.httpClient = nil
 }
 
-func (cm *ClientManager) SetMyClient(userID string, client *MyClient) {
+func (cm *ClientManager) SetMyClient(client *MyClient) {
 	cm.Lock()
 	defer cm.Unlock()
-	cm.myClients[userID] = client
+	cm.myClient = client
 }
 
-func (cm *ClientManager) GetMyClient(userID string) *MyClient {
+func (cm *ClientManager) GetMyClient() *MyClient {
 	cm.RLock()
 	defer cm.RUnlock()
-	return cm.myClients[userID]
+	return cm.myClient
 }
 
-func (cm *ClientManager) DeleteMyClient(userID string) {
+func (cm *ClientManager) DeleteMyClient() {
 	cm.Lock()
 	defer cm.Unlock()
-	delete(cm.myClients, userID)
+	cm.myClient = nil
 }
 
 // UpdateMyClientSubscriptions updates the event subscriptions of a client without reconnecting
-func (cm *ClientManager) UpdateMyClientSubscriptions(userID string, subscriptions []string) {
+func (cm *ClientManager) UpdateMyClientSubscriptions(subscriptions []string) {
 	cm.Lock()
 	defer cm.Unlock()
-	if client, exists := cm.myClients[userID]; exists {
-		client.subscriptions = subscriptions
+	if cm.myClient != nil {
+		cm.myClient.subscriptions = subscriptions
 	}
 }
