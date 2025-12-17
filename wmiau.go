@@ -33,7 +33,6 @@ type MyClient struct {
 	WAClient       *whatsmeow.Client
 	eventHandlerID uint32
 	userID         string
-	token          string
 	db             *sqlx.DB
 	s              *server
 }
@@ -94,13 +93,11 @@ func (s *server) connectOnStartup() {
 		return
 	}
 
-	token := globalUser.Get("Token")
 	jid := globalUser.Get("Jid")
 
-	log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-	log.Info().Str("jid", jid).Msg("Attempt to connect")
+	log.Info().Str("jid", jid).Msg("Connect to Whatsapp on startup")
 	killchannel[txtid] = make(chan bool, 1)
-	go s.startClient(txtid, jid, token)
+	go s.startClient(txtid, jid)
 }
 
 func parseJID(arg string) (types.JID, bool) {
@@ -122,7 +119,7 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func (s *server) startClient(userID string, textjid string, token string) {
+func (s *server) startClient(userID string, textjid string) {
 	log.Info().Str("userid", userID).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
 
 	// Connection retry constants
@@ -166,7 +163,7 @@ func (s *server) startClient(userID string, textjid string, token string) {
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
 	store.DeviceProps.Os = osName
 
-	mycli := MyClient{client, 1, userID, token, s.db, s}
+	mycli := MyClient{client, 1, userID, s.db, s}
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
 
 	// Store the MyClient in clientManager
@@ -405,7 +402,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			return
 		}
 	case *events.PairSuccess:
-		log.Info().Str("userid", mycli.userID).Str("token", mycli.token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+		log.Info().Str("userid", mycli.userID).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
 		jid := evt.ID
 		sqlStmt := `UPDATE users SET jid=$1 WHERE id=$2`
 		_, err := mycli.db.Exec(sqlStmt, jid, mycli.userID)
@@ -417,9 +414,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postmap["type"] = "PairSuccess"
 
 		txtid = globalUser.Get("Id")
-		token := globalUser.Get("Token")
 		updateGlobalUser("Jid", fmt.Sprintf("%s", jid))
-		log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
+		log.Info().Str("jid", jid.String()).Str("userid", txtid).Msg("User information set")
 
 		// Check if automatic history sync is enabled and trigger it after QR code is scanned
 		var daysToSyncHistory int

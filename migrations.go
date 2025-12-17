@@ -20,38 +20,6 @@ var migrations = []Migration{
 		ID:   1,
 		Name: "initial_schema",
 	},
-	{
-		ID:   2,
-		Name: "add_proxy_url",
-	},
-	{
-		ID:   3,
-		Name: "change_id_to_string",
-	},
-	{
-		ID:   4,
-		Name: "add_s3_support",
-	},
-	{
-		ID:   5,
-		Name: "add_message_history",
-	},
-	{
-		ID:   6,
-		Name: "add_quoted_message_id",
-	},
-	{
-		ID:   7,
-		Name: "add_hmac_key",
-	},
-	{
-		ID:   8,
-		Name: "add_data_json",
-	},
-	{
-		ID:   9,
-		Name: "add_events_table",
-	},
 }
 
 // GenerateRandomID creates a random string ID
@@ -150,55 +118,22 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 
 	switch migration.ID {
 	case 1:
+		// Create users table
 		err = createTableIfNotExistsSQLite(tx, "users", `
 			CREATE TABLE users (
 				id TEXT PRIMARY KEY,
 				name TEXT NOT NULL,
-				token TEXT NOT NULL,
-				webhook TEXT NOT NULL DEFAULT '',
 				jid TEXT NOT NULL DEFAULT '',
 				qrcode TEXT NOT NULL DEFAULT '',
 				connected INTEGER,
-				expiration INTEGER,
-				events TEXT NOT NULL DEFAULT '',
-				proxy_url TEXT DEFAULT ''
+				history INTEGER DEFAULT 0,
+				days_to_sync_history INTEGER DEFAULT 0
 			)`)
-	case 2:
-		err = addColumnIfNotExistsSQLite(tx, "users", "proxy_url", "TEXT DEFAULT ''")
-	case 3:
-		err = migrateSQLiteIDToString(tx)
-	case 4:
-		// Handle S3 columns
-		err = addColumnIfNotExistsSQLite(tx, "users", "s3_enabled", "BOOLEAN DEFAULT 0")
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_endpoint", "TEXT DEFAULT ''")
+		if err != nil {
+			return fmt.Errorf("failed to create users table: %w", err)
 		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_region", "TEXT DEFAULT ''")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_bucket", "TEXT DEFAULT ''")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_access_key", "TEXT DEFAULT ''")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_secret_key", "TEXT DEFAULT ''")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_path_style", "BOOLEAN DEFAULT 1")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_public_url", "TEXT DEFAULT ''")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "media_delivery", "TEXT DEFAULT 'base64'")
-		}
-		if err == nil {
-			err = addColumnIfNotExistsSQLite(tx, "users", "s3_retention_days", "INTEGER DEFAULT 30")
-		}
-	case 5:
-		// Handle message_history table creation
+
+		// Create message_history table
 		err = createTableIfNotExistsSQLite(tx, "message_history", `
 			CREATE TABLE message_history (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,29 +145,23 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 				message_type TEXT NOT NULL,
 				text_content TEXT,
 				media_link TEXT,
+				quoted_message_id TEXT,
+				datajson TEXT,
 				UNIQUE(user_id, message_id)
 			)`)
-		if err == nil {
-			// Create index
-			_, err = tx.Exec(`
-				CREATE INDEX IF NOT EXISTS idx_message_history_user_chat_timestamp
-				ON message_history (user_id, chat_jid, timestamp DESC)`)
+		if err != nil {
+			return fmt.Errorf("failed to create message_history table: %w", err)
 		}
-		if err == nil {
-			// Add history column to users table
-			err = addColumnIfNotExistsSQLite(tx, "users", "history", "INTEGER DEFAULT 0")
+
+		// Create message_history index
+		_, err = tx.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_message_history_user_chat_timestamp
+			ON message_history (user_id, chat_jid, timestamp DESC)`)
+		if err != nil {
+			return fmt.Errorf("failed to create message_history index: %w", err)
 		}
-	case 6:
-		// Add quoted_message_id column to message_history table
-		err = addColumnIfNotExistsSQLite(tx, "message_history", "quoted_message_id", "TEXT")
-	case 7:
-		// Add hmac_key column (legacy, not used)
-		err = addColumnIfNotExistsSQLite(tx, "users", "hmac_key", "BLOB")
-	case 8:
-		// Add dataJson column to message_history table
-		err = addColumnIfNotExistsSQLite(tx, "message_history", "datajson", "TEXT")
-	case 9:
-		// Create events table for storing all WhatsApp events
+
+		// Create events table
 		err = createTableIfNotExistsSQLite(tx, "events", `
 			CREATE TABLE events (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -241,17 +170,23 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 				payload TEXT NOT NULL,
 				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 			)`)
-		if err == nil {
-			// Create index on user_id and created_at for efficient queries
-			_, err = tx.Exec(`
-				CREATE INDEX IF NOT EXISTS idx_events_user_created
-				ON events (user_id, created_at DESC)`)
+		if err != nil {
+			return fmt.Errorf("failed to create events table: %w", err)
 		}
-		if err == nil {
-			// Create index on event_type for filtering by event type
-			_, err = tx.Exec(`
-				CREATE INDEX IF NOT EXISTS idx_events_type
-				ON events (event_type)`)
+
+		// Create events indexes
+		_, err = tx.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_events_user_created
+			ON events (user_id, created_at DESC)`)
+		if err != nil {
+			return fmt.Errorf("failed to create events user index: %w", err)
+		}
+
+		_, err = tx.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_events_type
+			ON events (event_type)`)
+		if err != nil {
+			return fmt.Errorf("failed to create events type index: %w", err)
 		}
 	}
 
@@ -279,86 +214,6 @@ func createTableIfNotExistsSQLite(tx *sqlx.Tx, tableName, createSQL string) erro
 	if exists == 0 {
 		_, err = tx.Exec(createSQL)
 		return err
-	}
-	return nil
-}
-
-func migrateSQLiteIDToString(tx *sqlx.Tx) error {
-	// 1. Check if we need to do the migration
-	var currentType string
-	err := tx.QueryRow(`
-        SELECT type FROM pragma_table_info('users')
-        WHERE name = 'id'`).Scan(&currentType)
-	if err != nil {
-		return fmt.Errorf("failed to check column type: %w", err)
-	}
-
-	if currentType != "INTEGER" {
-		// No migration needed
-		return nil
-	}
-
-	// 2. Create new table with string ID
-	_, err = tx.Exec(`
-        CREATE TABLE users_new (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            token TEXT NOT NULL,
-            webhook TEXT NOT NULL DEFAULT '',
-            jid TEXT NOT NULL DEFAULT '',
-            qrcode TEXT NOT NULL DEFAULT '',
-            connected INTEGER,
-            expiration INTEGER,
-            events TEXT NOT NULL DEFAULT '',
-            proxy_url TEXT DEFAULT ''
-        )`)
-	if err != nil {
-		return fmt.Errorf("failed to create new table: %w", err)
-	}
-
-	// 3. Copy data with new UUIDs
-	_, err = tx.Exec(`
-        INSERT INTO users_new
-        SELECT
-            hex(randomblob(16)),
-            name, token, webhook, jid, qrcode,
-            connected, expiration, events, proxy_url
-        FROM users`)
-	if err != nil {
-		return fmt.Errorf("failed to copy data: %w", err)
-	}
-
-	// 4. Drop old table
-	_, err = tx.Exec(`DROP TABLE users`)
-	if err != nil {
-		return fmt.Errorf("failed to drop old table: %w", err)
-	}
-
-	// 5. Rename new table
-	_, err = tx.Exec(`ALTER TABLE users_new RENAME TO users`)
-	if err != nil {
-		return fmt.Errorf("failed to rename table: %w", err)
-	}
-
-	return nil
-}
-
-func addColumnIfNotExistsSQLite(tx *sqlx.Tx, tableName, columnName, columnDef string) error {
-	var exists int
-	err := tx.Get(&exists, `
-        SELECT COUNT(*) FROM pragma_table_info(?)
-        WHERE name = ?`, tableName, columnName)
-	if err != nil {
-		return fmt.Errorf("failed to check column existence: %w", err)
-	}
-
-	if exists == 0 {
-		_, err = tx.Exec(fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN %s %s",
-			tableName, columnName, columnDef))
-		if err != nil {
-			return fmt.Errorf("failed to add column: %w", err)
-		}
 	}
 	return nil
 }

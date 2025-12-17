@@ -27,7 +27,7 @@ Endpoint: _/session/connect_
 Method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Subscribe":["Message"],"Immediate":false}' http://localhost:8080/session/connect 
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Subscribe":["Message"],"Immediate":false}' http://localhost:8080/session/connect 
 ```
 
 Response:
@@ -57,7 +57,7 @@ Method: **POST**
 
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' http://localhost:8080/session/disconnect 
+curl -s -X POST http://localhost:8080/session/disconnect 
 ```
 
 Response: 
@@ -83,7 +83,7 @@ Endpoint: _/session/logout_
 Method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' http://localhost:8080/session/logout 
+curl -s -X POST http://localhost:8080/session/logout 
 ```
 
 Response:
@@ -112,7 +112,7 @@ Endpoint: _/session/status_
 Method: **GET**
 
 ```
-curl -s -H 'Token: 1234ABCD' http://localhost:8080/session/status 
+curl -s http://localhost:8080/session/status 
 ```
 
 Response:
@@ -141,7 +141,7 @@ Endpoint: _/session/qr_
 Method: **GET**
 
 ```
-curl -s -H 'Token: 1234ABCD' http://localhost:8080/session/qr
+curl -s http://localhost:8080/session/qr
 ```
 Response:
 ```json
@@ -169,7 +169,7 @@ Endpoint: _/user/info_
 Method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":["5491155554445","5491155554444"]}' http://localhost:8080/user/info 
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Phone":["5491155554445","5491155554444"]}' http://localhost:8080/user/info 
 ```
 
 Response:
@@ -221,7 +221,7 @@ Endpoint: _/user/check_
 Method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":["5491155554445","5491155554444"]}' http://localhost:8080/user/check
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Phone":["5491155554445","5491155554444"]}' http://localhost:8080/user/check
 ```
 
 Response:
@@ -260,7 +260,7 @@ Endpoint: _/user/avatar_
 Method: **GET**
 
 ```
-curl -s -X GET -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554445","Preview":true]}' http://localhost:8080/user/avatar
+curl -s -X GET -H 'Content-Type: application/json' --data '{"Phone":"5491155554445","Preview":true]}' http://localhost:8080/user/avatar
 ```
 
 Response:
@@ -285,7 +285,7 @@ Endpoint: _/user/contacts_
 Method: **GET**
 
 ```
-curl -s -X GET -H 'Token: 1234ABCD' http://localhost:8080/user/contacts
+curl -s -X GET http://localhost:8080/user/contacts
 ```
 
 Response:
@@ -332,18 +332,18 @@ Method: **POST**
 Example sending a new message:
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"Hellow Meow", "Id": "90B2F8B13FAC8A9CF6B06E99C7834DC5"}' http://localhost:8080/chat/send/text
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"Hellow Meow", "Id": "90B2F8B13FAC8A9CF6B06E99C7834DC5"}' http://localhost:8080/chat/send/text
 ```
 
 Example sending a new message with link preview
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"Check my site? https://example.com", "Id": "90B2F8B13FAC8A9CF6B06E99C7834DC5","LinkPreview": true}' http://localhost:8080/chat/send/text
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"Check my site? https://example.com", "Id": "90B2F8B13FAC8A9CF6B06E99C7834DC5","LinkPreview": true}' http://localhost:8080/chat/send/text
 ```
 
 Example replying to some message:
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"Ditto","ContextInfo":{"StanzaId":"AA3DSE28UDJES3","Participant":"5491155553935@s.whatsapp.net"}}' http://localhost:8080/chat/send/text
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"Ditto","ContextInfo":{"StanzaId":"AA3DSE28UDJES3","Participant":"5491155553935@s.whatsapp.net"}}' http://localhost:8080/chat/send/text
 ```
 
 Response:
@@ -372,7 +372,7 @@ Method: **POST**
 
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Audio":"data:audio/ogg;base64,T2dnUw..."}' http://localhost:8080/chat/send/audio
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Audio":"data:audio/ogg;base64,T2dnUw..."}' http://localhost:8080/chat/send/audio
 ```
 
 ## Send Image Message
@@ -385,7 +385,7 @@ Method: **POST**
 
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Caption":"Look at this", "Image":"data:image/jpeg;base64,iVBORw0KGgoAAAANSU..."}' http://localhost:8080/chat/send/image
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Caption":"Look at this", "Image":"data:image/jpeg;base64,iVBORw0KGgoAAAANSU..."}' http://localhost:8080/chat/send/image
 ```
 
 ---
@@ -400,7 +400,7 @@ Method: **POST**
 
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","FileName":"hola.txt","Document":"data:application/octet-stream;base64,aG9sYSBxdWUgdGFsCg=="}' http://localhost:8080/chat/send/document
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","FileName":"hola.txt","Document":"data:application/octet-stream;base64,aG9sYSBxdWUgdGFsCg=="}' http://localhost:8080/chat/send/document
 ```
 
 ---
@@ -415,7 +415,7 @@ Method: **POST**
 
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Caption":"Look at this", "Video":"data:image/jpeg;base64,iVBORw0KGgoAAAANSU..."}' http://localhost:8080/chat/send/video
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Caption":"Look at this", "Video":"data:image/jpeg;base64,iVBORw0KGgoAAAANSU..."}' http://localhost:8080/chat/send/video
 ```
 
 
@@ -436,12 +436,12 @@ Method: **POST**
 
 Static WebP sticker:
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Sticker":"data:image/webp;base64,iVBORw0KGgoAAAANSU..."}' http://localhost:8080/chat/send/sticker
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Sticker":"data:image/webp;base64,iVBORw0KGgoAAAANSU..."}' http://localhost:8080/chat/send/sticker
 ```
 
 Static WebP sticker with pack metadata:
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{
+curl -X POST -H 'Content-Type: application/json' --data '{
   "Phone":"5491155554444",
   "Sticker":"data:image/webp;base64,iVBORw0KGgoAAAANSU...",
   "PackId":"com.example.my.pack",
@@ -454,7 +454,7 @@ curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{
 
 Animated sticker:
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Sticker":"data:video/mp4;base64,AAAAIGZ0eXBpc29t..."}' http://localhost:8080/chat/send/sticker
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Sticker":"data:video/mp4;base64,AAAAIGZ0eXBpc29t..."}' http://localhost:8080/chat/send/sticker
 ```
 
 
@@ -470,7 +470,7 @@ Method: **POST**
 
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Latitude":48.858370,"Longitude":2.294481,"Phone":"5491155554444","Name":"Paris"}' http://localhost:8080/chat/send/location
+curl -X POST -H 'Content-Type: application/json' --data '{"Latitude":48.858370,"Longitude":2.294481,"Phone":"5491155554444","Name":"Paris"}' http://localhost:8080/chat/send/location
 ```
 
 ---
@@ -485,7 +485,7 @@ Method: **POST**
 
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Name":"Casa","Vcard":"BEGIN:VCARD\nVERSION:3.0\nN:Doe;John;;;\nFN:John Doe\nORG:Example.com Inc.;\nTITLE:Imaginary test person\nEMAIL;type=INTERNET;type=WORK;type=pref:johnDoe@example.org\nTEL;type=WORK;type=pref:+1 617 555 1212\nTEL;type=WORK:+1 (617) 555-1234\nTEL;type=CELL:+1 781 555 1212\nTEL;type=HOME:+1 202 555 1212\nitem1.ADR;type=WORK:;;2 Enterprise Avenue;Worktown;NY;01111;USA\nitem1.X-ABADR:us\nitem2.ADR;type=HOME;type=pref:;;3 Acacia Avenue;Hoitem2.X-ABADR:us\nEND:VCARD"}' http://localhost:8080/chat/send/contact
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Name":"Casa","Vcard":"BEGIN:VCARD\nVERSION:3.0\nN:Doe;John;;;\nFN:John Doe\nORG:Example.com Inc.;\nTITLE:Imaginary test person\nEMAIL;type=INTERNET;type=WORK;type=pref:johnDoe@example.org\nTEL;type=WORK;type=pref:+1 617 555 1212\nTEL;type=WORK:+1 (617) 555-1234\nTEL;type=CELL:+1 781 555 1212\nTEL;type=HOME:+1 202 555 1212\nitem1.ADR;type=WORK:;;2 Enterprise Avenue;Worktown;NY;01111;USA\nitem1.X-ABADR:us\nitem2.ADR;type=HOME;type=pref:;;3 Acacia Avenue;Hoitem2.X-ABADR:us\nEND:VCARD"}' http://localhost:8080/chat/send/contact
 ```
 
 ---
@@ -499,7 +499,7 @@ endpoint: _/chat/presence_
 method: **POST**
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","State":"composing","Media":""}' http://localhost:8080/chat/presence
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","State":"composing","Media":""}' http://localhost:8080/chat/presence
 ```
 
 ---
@@ -521,7 +521,7 @@ endpoint: _/chat/markread_
 method: **POST**
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Id":["AABBCCDD112233", "IIOOPPLL43332"], "ChatPhone":"5491155553934", "SenderPhone":"5491155553935"}' http://localhost:8080/chat/markread
+curl -X POST -H 'Content-Type: application/json' --data '{"Id":["AABBCCDD112233", "IIOOPPLL43332"], "ChatPhone":"5491155553934", "SenderPhone":"5491155553935"}' http://localhost:8080/chat/markread
 ```
 
 ---
@@ -535,7 +535,7 @@ endpoint: _/chat/react_
 method: **POST**
 
 ```
-curl -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"❤️","Id":"me:069EDE53E81CB5A4773587FB96CB3ED3"}' http://localhost:8080/chat/react
+curl -X POST -H 'Content-Type: application/json' --data '{"Phone":"5491155554444","Body":"❤️","Id":"me:069EDE53E81CB5A4773587FB96CB3ED3"}' http://localhost:8080/chat/react
 ```
 
 ---
@@ -549,7 +549,7 @@ endpoint: _/chat/downloadimage_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"image/jpeg", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloadimage
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"image/jpeg", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloadimage
 ```
 
 ---
@@ -563,7 +563,7 @@ endpoint: _/chat/downloadvideo_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"video/mp4", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloadvideo
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"video/mp4", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloadvideo
 ```
 
 ---
@@ -577,7 +577,7 @@ endpoint: _/chat/downloadaudio_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"audio/ogg; codecs=opus", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloadaudio
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"audio/ogg; codecs=opus", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloadaudio
 ```
 
 ---
@@ -591,7 +591,7 @@ endpoint: _/chat/downloaddocument_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"application/pdf", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloaddocument
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Url":"https://mmg.whatsapp.net/d/f/Apah954sUug5I9GnQsmXKPUdUn3ZPKGYFnscJU02dpuD.enc","Mimetype":"application/pdf", "FileSHA256":"nMthnfkUWQiMfNJpA6K9+ft+Dx9Mb1STs+9wMHjeo/M=","FileLength":2039,"MediaKey":"vq0RR0nYGkxm2HrpwUp3sK8A7Nr1KUcOiBHrT1hg+PU=","FileEncSHA256":"6bMVZ5dRf9JKxJSUgg4w1h3iSYA3dM8gEQxaMPwoONc="}' http://localhost:8080/chat/downloaddocument
 ```
 
 ---
@@ -610,7 +610,7 @@ method: **GET**
 
 
 ```
-curl -s -X GET -H 'Token: 1234ABCD' http://localhost:8080/group/list 
+curl -s -X GET http://localhost:8080/group/list 
 ```
 
 Response:
@@ -672,7 +672,7 @@ method: **GET**
 
 
 ```
-curl -s -X GET -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"GroupJID":"120362023605733675@g.us"}' http://localhost:8080/group/invitelink 
+curl -s -X GET -H 'Content-Type: application/json' --data '{"GroupJID":"120362023605733675@g.us"}' http://localhost:8080/group/invitelink 
 ```
 
 Response: 
@@ -699,7 +699,7 @@ method: **GET**
 
 
 ```
-curl -s -X GET -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"GroupJID":"120362023605733675@g.us"}' http://localhost:8080/group/info
+curl -s -X GET -H 'Content-Type: application/json' --data '{"GroupJID":"120362023605733675@g.us"}' http://localhost:8080/group/info
 ```
 
 Response: 
@@ -766,7 +766,7 @@ method: **POST**
 - Transparent images will be converted to JPEG with white background
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"GroupJID":"120362023605733675@g.us","Image":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}' http://localhost:8080/group/photo 
+curl -s -X POST -H 'Content-Type: application/json' -d '{"GroupJID":"120362023605733675@g.us","Image":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}' http://localhost:8080/group/photo 
 ```
 
 Response:
@@ -796,7 +796,7 @@ method: **POST**
 
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"GroupJID":"120362023605733675@g.us","Name":"New Group Name"}' http://localhost:8080/group/name 
+curl -s -X POST -H 'Content-Type: application/json' -d '{"GroupJID":"120362023605733675@g.us","Name":"New Group Name"}' http://localhost:8080/group/name 
 ```
 
 Response:
@@ -822,7 +822,7 @@ endpoint: _/group/create_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"name":"My New Group","participants":["5491155553934","5491155553935"]}' http://localhost:8080/group/create 
+curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"My New Group","participants":["5491155553934","5491155553935"]}' http://localhost:8080/group/create 
 ```
 
 Response:
@@ -863,7 +863,7 @@ endpoint: _/group/locked_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us","locked":true}' http://localhost:8080/group/locked 
+curl -s -X POST -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us","locked":true}' http://localhost:8080/group/locked 
 ```
 
 Response:
@@ -889,7 +889,7 @@ endpoint: _/group/ephemeral_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us","duration":"24h"}' http://localhost:8080/group/ephemeral 
+curl -s -X POST -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us","duration":"24h"}' http://localhost:8080/group/ephemeral 
 ```
 
 Valid duration values:
@@ -921,7 +921,7 @@ endpoint: _/group/photo/remove_
 method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us"}' http://localhost:8080/group/photo/remove 
+curl -s -X POST -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us"}' http://localhost:8080/group/photo/remove 
 ```
 
 Response:

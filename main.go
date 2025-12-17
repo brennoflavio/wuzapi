@@ -363,23 +363,21 @@ func loadOrCreateGlobalUser(db *sqlx.DB) error {
 			// No user exists, create a default one
 			id = uuid.New().String()
 			name = "default"
-			token := uuid.New().String()
 
 			_, err = db.Exec(
-				"INSERT INTO users (id, name, token, webhook, expiration, events, jid, qrcode, history) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-				id, name, token, "", 0, "", "", "", 0,
+				"INSERT INTO users (id, name, jid, qrcode, history) VALUES ($1, $2, $3, $4, $5)",
+				id, name, "", "", 0,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to create default user: %w", err)
 			}
 
-			log.Info().Str("id", id).Str("name", name).Str("token", token).Msg("Created default user")
+			log.Info().Str("id", id).Str("name", name).Msg("Created default user")
 
 			globalUser = Values{m: map[string]string{
 				"Id":      id,
 				"Name":    name,
 				"Jid":     "",
-				"Token":   token,
 				"Qrcode":  "",
 				"History": "0",
 			}}
@@ -387,18 +385,10 @@ func loadOrCreateGlobalUser(db *sqlx.DB) error {
 			return fmt.Errorf("failed to query users: %w", err)
 		}
 	} else {
-		// User exists, load the token as well
-		var token string
-		err = db.QueryRow("SELECT token FROM users WHERE id = $1", id).Scan(&token)
-		if err != nil {
-			return fmt.Errorf("failed to get user token: %w", err)
-		}
-
 		globalUser = Values{m: map[string]string{
 			"Id":      id,
 			"Name":    name,
 			"Jid":     jid,
-			"Token":   token,
 			"Qrcode":  qrcode,
 			"History": fmt.Sprintf("%d", history),
 		}}

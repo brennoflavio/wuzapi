@@ -125,7 +125,6 @@ func (s *server) Connect() http.HandlerFunc {
 
 		jid := globalUser.Get("Jid")
 		txtid := globalUser.Get("Id")
-		token := globalUser.Get("Token")
 
 		// Decodes request BODY
 		decoder := json.NewDecoder(r.Body)
@@ -146,7 +145,7 @@ func (s *server) Connect() http.HandlerFunc {
 
 		log.Info().Str("jid", jid).Msg("Attempt to connect")
 		killchannel[txtid] = make(chan bool, 1)
-		go s.startClient(txtid, jid, token)
+		go s.startClient(txtid, jid)
 
 		if t.Immediate == false {
 			log.Warn().Msg("Waiting 10 seconds")
@@ -384,7 +383,6 @@ func (s *server) GetStatus() http.HandlerFunc {
 			Str("Id", globalUser.Get("Id")).
 			Str("Jid", globalUser.Get("Jid")).
 			Str("Name", globalUser.Get("Name")).
-			Str("Token", globalUser.Get("Token")).
 			Str("History", globalUser.Get("History")).
 			Msg("User info values")
 
@@ -396,7 +394,6 @@ func (s *server) GetStatus() http.HandlerFunc {
 			"name":      globalUser.Get("Name"),
 			"connected": isConnected,
 			"loggedIn":  isLoggedIn,
-			"token":     globalUser.Get("Token"),
 			"jid":       globalUser.Get("Jid"),
 			"qrcode":    globalUser.Get("Qrcode"),
 			"history":   globalUser.Get("History"),

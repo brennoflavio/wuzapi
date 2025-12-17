@@ -156,7 +156,6 @@ func getOpenGraphData(ctx context.Context, urlStr string, userID string) (title,
 		ctx, cancel := context.WithTimeout(ctx, openGraphFetchTimeout)
 		defer cancel()
 
-		// Acquire a token from the semaphore pool
 		userPool := userSemaphoreManager.ForUser(userID)
 		select {
 		case userPool <- struct{}{}:

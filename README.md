@@ -115,35 +115,12 @@ The Docker configuration will:
 
 **Note:** The `.env` file is already included in `.gitignore` to avoid committing sensitive information to your repository.
 
-## Usage
-
-To interact with the API, you must include the `Authorization` header in HTTP requests, containing the user's authentication token. You can have multiple users (different WhatsApp numbers) on the same server.  
-
-* A Swagger API reference at [/api](/api)
-* A sample web page to connect and scan QR codes at [/login](/login)
-* A fully featured Dashboard to create, manage and test instances at [/dashboard](dashboard)
-
-## ADMIN Actions
-
-You can list, add and remove users using the admin endpoints:
-
-- `GET /admin/users` - List all users
-- `POST /admin/users` - Create a new user
-- `DELETE /admin/users/{id}` - Remove a user
-
-The JSON body for creating a new user must contain:
-
-- `name` [string] : User's name 
-- `token` [string] : Security token to authorize/authenticate this user
-- `events` [string] : Comma-separated list of events to receive (required) - Valid events are: "Message", "ReadReceipt", "Presence", "HistorySync", "ChatPresence", "All"
-- `expiration` [int] : Expiration timestamp (optional, not enforced by the system)
-
 ## API reference 
 
 API calls should be made with content type json, and parameters sent into the
-request body, always passing the Token header for authenticating the request.
+request body.
 
-Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
+Check the [API Reference](API.md)
 
 ## Contributors
 
