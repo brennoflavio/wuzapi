@@ -4548,6 +4548,25 @@ func (s *server) AddUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
+		// Check if a user already exists (single-user mode)
+		var userCount int
+		if err := s.db.Get(&userCount, "SELECT COUNT(*) FROM users"); err != nil {
+			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"code":    http.StatusInternalServerError,
+				"error":   "database error",
+				"success": false,
+			})
+			return
+		}
+		if userCount > 0 {
+			s.respondWithJSON(w, http.StatusConflict, map[string]interface{}{
+				"code":    http.StatusConflict,
+				"error":   "only one user allowed",
+				"success": false,
+			})
+			return
+		}
+
 		// Parse the request body
 		var user struct {
 			Name       string `json:"name"`
