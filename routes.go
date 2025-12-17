@@ -65,11 +65,6 @@ func (s *server) routes() {
 	s.router.Handle("/session/pairphone", c.Then(s.PairPhone())).Methods("POST")
 	s.router.Handle("/session/history", c.Then(s.RequestHistorySync())).Methods("GET")
 
-	s.router.Handle("/webhook", c.Then(s.SetWebhook())).Methods("POST")
-	s.router.Handle("/webhook", c.Then(s.GetWebhook())).Methods("GET")
-	s.router.Handle("/webhook", c.Then(s.DeleteWebhook())).Methods("DELETE")
-	s.router.Handle("/webhook", c.Then(s.UpdateWebhook())).Methods("PUT")
-
 	s.router.Handle("/session/history", c.Then(s.SetHistory())).Methods("POST")
 
 	s.router.Handle("/chat/send/text", c.Then(s.SendMessage())).Methods("POST")

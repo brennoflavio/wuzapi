@@ -71,12 +71,3 @@ func (cm *ClientManager) DeleteMyClient() {
 	defer cm.Unlock()
 	cm.myClient = nil
 }
-
-// UpdateMyClientSubscriptions updates the event subscriptions of a client without reconnecting
-func (cm *ClientManager) UpdateMyClientSubscriptions(subscriptions []string) {
-	cm.Lock()
-	defer cm.Unlock()
-	if cm.myClient != nil {
-		cm.myClient.subscriptions = subscriptions
-	}
-}

@@ -114,25 +114,20 @@ func (s *server) GetHealth() http.HandlerFunc {
 	}
 }
 
-// messageTypes moved to constants.go as supportedEventTypes
-
 // Connects to Whatsapp Servers
 func (s *server) Connect() http.HandlerFunc {
 
 	type connectStruct struct {
-		Subscribe []string
 		Immediate bool
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		webhook := globalUser.Get("Webhook")
 		jid := globalUser.Get("Jid")
 		txtid := globalUser.Get("Id")
 		token := globalUser.Get("Token")
-		eventstring := ""
 
-		// Decodes request BODY looking for events to subscribe
+		// Decodes request BODY
 		decoder := json.NewDecoder(r.Body)
 		var t connectStruct
 		err := decoder.Decode(&t)
@@ -149,33 +144,9 @@ func (s *server) Connect() http.HandlerFunc {
 			}
 		}
 
-		var subscribedEvents []string
-		if len(t.Subscribe) < 1 {
-			if !Find(subscribedEvents, "") {
-				subscribedEvents = append(subscribedEvents, "")
-			}
-		} else {
-			for _, arg := range t.Subscribe {
-				if !Find(supportedEventTypes, arg) {
-					log.Warn().Str("Type", arg).Msg("Event type discarded")
-					continue
-				}
-				if !Find(subscribedEvents, arg) {
-					subscribedEvents = append(subscribedEvents, arg)
-				}
-			}
-		}
-		eventstring = strings.Join(subscribedEvents, ",")
-		_, err = s.db.Exec("UPDATE users SET events=$1 WHERE id=$2", eventstring, txtid)
-		if err != nil {
-			log.Warn().Msg("Could not set events in users table")
-		}
-		log.Info().Str("events", eventstring).Msg("Setting subscribed events")
-		updateGlobalUser("Events", eventstring)
-
 		log.Info().Str("jid", jid).Msg("Attempt to connect")
 		killchannel[txtid] = make(chan bool, 1)
-		go s.startClient(txtid, jid, token, subscribedEvents)
+		go s.startClient(txtid, jid, token)
 
 		if t.Immediate == false {
 			log.Warn().Msg("Waiting 10 seconds")
@@ -192,7 +163,7 @@ func (s *server) Connect() http.HandlerFunc {
 			}
 		}
 
-		response := map[string]interface{}{"webhook": webhook, "jid": jid, "events": eventstring, "details": "Connected!"}
+		response := map[string]interface{}{"jid": jid, "details": "Connected!"}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
@@ -249,208 +220,6 @@ func (s *server) Disconnect() http.HandlerFunc {
 			log.Warn().Str("jid", jid).Msg("Ignoring disconnect as it was not connected")
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("cannot disconnect because it is not logged in"))
 			return
-		}
-	}
-}
-
-// Gets WebHook
-func (s *server) GetWebhook() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-
-		webhook := ""
-		events := ""
-		txtid := globalUser.Get("Id")
-
-		rows, err := s.db.Query("SELECT webhook,events FROM users WHERE id=$1 LIMIT 1", txtid)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not get webhook: %v", err)))
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			err = rows.Scan(&webhook, &events)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not get webhook: %s", fmt.Sprintf("%s", err))))
-				return
-			}
-		}
-		err = rows.Err()
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not get webhook: %s", fmt.Sprintf("%s", err))))
-			return
-		}
-
-		eventarray := strings.Split(events, ",")
-
-		response := map[string]interface{}{"webhook": webhook, "subscribe": eventarray}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-		return
-	}
-}
-
-// DeleteWebhook removes the webhook and clears events for a user
-func (s *server) DeleteWebhook() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := globalUser.Get("Id")
-
-		// Update the database to remove the webhook and clear events
-		_, err := s.db.Exec("UPDATE users SET webhook='', events='' WHERE id=$1", txtid)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not delete webhook: %v", err)))
-			return
-		}
-
-		// Update the global user
-		updateGlobalUser("Webhook", "")
-		updateGlobalUser("Events", "")
-
-		response := map[string]interface{}{"Details": "Webhook and events deleted successfully"}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// UpdateWebhook updates the webhook URL and events for a user
-func (s *server) UpdateWebhook() http.HandlerFunc {
-	type updateWebhookStruct struct {
-		WebhookURL string   `json:"webhook"`
-		Events     []string `json:"events,omitempty"`
-		Active     bool     `json:"active"`
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := globalUser.Get("Id")
-
-		decoder := json.NewDecoder(r.Body)
-		var t updateWebhookStruct
-		err := decoder.Decode(&t)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		webhook := t.WebhookURL
-
-		var eventstring string
-		var validEvents []string
-		for _, event := range t.Events {
-			if !Find(supportedEventTypes, event) {
-				log.Warn().Str("Type", event).Msg("Event type discarded")
-				continue
-			}
-			validEvents = append(validEvents, event)
-		}
-		eventstring = strings.Join(validEvents, ",")
-		if eventstring == "," || eventstring == "" {
-			eventstring = ""
-		}
-
-		if !t.Active {
-			webhook = ""
-			eventstring = ""
-		}
-
-		if len(t.Events) > 0 {
-			_, err = s.db.Exec("UPDATE users SET webhook=$1, events=$2 WHERE id=$3", webhook, eventstring, txtid)
-
-			// Update MyClient if connected - integrated UpdateEvents functionality
-			if len(validEvents) > 0 {
-				clientManager.UpdateMyClientSubscriptions(validEvents)
-				log.Info().Strs("events", validEvents).Str("user", txtid).Msg("Updated event subscriptions")
-			}
-		} else {
-			// Update only webhook
-			_, err = s.db.Exec("UPDATE users SET webhook=$1 WHERE id=$2", webhook, txtid)
-		}
-
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not update webhook: %v", err)))
-			return
-		}
-
-		updateGlobalUser("Webhook", webhook)
-		updateGlobalUser("Events", eventstring)
-
-		response := map[string]interface{}{"webhook": webhook, "events": validEvents, "active": t.Active}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
-		}
-	}
-}
-
-// SetWebhook sets the webhook URL and events for a user
-func (s *server) SetWebhook() http.HandlerFunc {
-	type webhookStruct struct {
-		WebhookURL string   `json:"webhookurl"`
-		Events     []string `json:"events,omitempty"`
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		txtid := globalUser.Get("Id")
-
-		decoder := json.NewDecoder(r.Body)
-		var t webhookStruct
-		err := decoder.Decode(&t)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
-			return
-		}
-
-		webhook := t.WebhookURL
-
-		// If events are provided, validate them
-		var eventstring string
-		if len(t.Events) > 0 {
-			var validEvents []string
-			for _, event := range t.Events {
-				if !Find(supportedEventTypes, event) {
-					log.Warn().Str("Type", event).Msg("Event type discarded")
-					continue
-				}
-				validEvents = append(validEvents, event)
-			}
-			eventstring = strings.Join(validEvents, ",")
-			if eventstring == "," || eventstring == "" {
-				eventstring = ""
-			}
-
-			// Update both webhook and events
-			_, err = s.db.Exec("UPDATE users SET webhook=$1, events=$2 WHERE id=$3", webhook, eventstring, txtid)
-
-			// Update MyClient if connected - integrated UpdateEvents functionality
-			if len(validEvents) > 0 {
-				clientManager.UpdateMyClientSubscriptions(validEvents)
-				log.Info().Strs("events", validEvents).Str("user", txtid).Msg("Updated event subscriptions")
-			}
-		} else {
-			// Update only webhook
-			_, err = s.db.Exec("UPDATE users SET webhook=$1 WHERE id=$2", webhook, txtid)
-		}
-
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("could not set webhook: %v", err)))
-			return
-		}
-
-		updateGlobalUser("Webhook", webhook)
-		updateGlobalUser("Events", eventstring)
-
-		response := map[string]interface{}{"webhook": webhook}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
 		}
 	}
 }

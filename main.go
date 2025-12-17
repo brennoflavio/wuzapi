@@ -9,8 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -44,19 +42,14 @@ type server struct {
 
 // Replace the global variables
 var (
-	address             = flag.String("address", "0.0.0.0", "Bind IP Address")
-	port                = flag.String("port", "8080", "Listen Port")
-	waDebug             = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
-	skipMedia           = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
-	osName              = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
-	globalWebhook = flag.String("globalwebhook", "", "Global webhook URL to receive all events from all users")
-	versionFlag         = flag.Bool("version", false, "Display version information and exit")
-	mode                = flag.String("mode", "http", "Server mode: http or stdio")
-	dataDir             = flag.String("datadir", "", "Data directory for database and session files (defaults to executable directory)")
-
-	webhookRetryEnabled      = flag.Bool("webhookretry", true, "Enable webhook retry mechanism")
-	webhookRetryCount        = flag.Int("retrycount", 5, "Number of times to retry failed webhooks")
-	webhookRetryDelaySeconds = flag.Int("retrydelay", 30, "Delay in seconds between webhook retries")
+	address     = flag.String("address", "0.0.0.0", "Bind IP Address")
+	port        = flag.String("port", "8080", "Listen Port")
+	waDebug     = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
+	skipMedia   = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
+	osName      = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
+	versionFlag = flag.Bool("version", false, "Display version information and exit")
+	mode        = flag.String("mode", "http", "Server mode: http or stdio")
+	dataDir     = flag.String("datadir", "", "Data directory for database and session files (defaults to executable directory)")
 
 	container        *sqlstore.Container
 	clientManager    = NewClientManager()
@@ -185,26 +178,7 @@ func main() {
 		}
 	}
 
-	if v := os.Getenv("WEBHOOK_RETRY_ENABLED"); v != "" {
-		*webhookRetryEnabled = strings.ToLower(v) == "true" || v == "1"
-	}
-	if v := os.Getenv("WEBHOOK_RETRY_COUNT"); v != "" {
-		if count, err := strconv.Atoi(v); err == nil {
-			*webhookRetryCount = count
-		}
-	}
-	if v := os.Getenv("WEBHOOK_RETRY_DELAY_SECONDS"); v != "" {
-		if delay, err := strconv.Atoi(v); err == nil {
-			*webhookRetryDelaySeconds = delay
-		}
-	}
-	log.Info().
-		Bool("enabled", *webhookRetryEnabled).
-		Int("count", *webhookRetryCount).
-		Int("delay", *webhookRetryDelaySeconds).
-		Msg("Webhook Retry Configured")
-
-	// Novo bloco para sobrescrever o osName pelo ENV, se existir
+	// Override osName from environment if set
 	if v := os.Getenv("SESSION_DEVICE_NAME"); v != "" {
 		*osName = v
 	}
@@ -242,16 +216,6 @@ func main() {
 			time.Local = loc
 			log.Info().Str("TZ", tz).Msg("Timezone defined")
 		}
-	}
-
-	// Check for global webhook in environment variable
-	if *globalWebhook == "" {
-		if v := os.Getenv("WUZAPI_GLOBAL_WEBHOOK"); v != "" {
-			*globalWebhook = v
-			log.Info().Str("global_webhook", v).Msg("Global webhook configured from environment variable")
-		}
-	} else {
-		log.Info().Str("global_webhook", *globalWebhook).Msg("Global webhook configured from command line")
 	}
 
 	ex, err := os.Executable()
@@ -387,12 +351,12 @@ func startStdioMode(s *server) {
 // loadOrCreateGlobalUser loads the first user from the database or creates a default one if none exists.
 // The user is stored in the globalUser variable for use throughout the application.
 func loadOrCreateGlobalUser(db *sqlx.DB) error {
-	var id, name, webhook, jid, events, qrcode string
+	var id, name, jid, qrcode string
 	var history int64
 
 	// Try to get the first user from the database
-	err := db.QueryRow("SELECT id, name, webhook, jid, events, qrcode, COALESCE(history, 0) FROM users LIMIT 1").
-		Scan(&id, &name, &webhook, &jid, &events, &qrcode, &history)
+	err := db.QueryRow("SELECT id, name, jid, qrcode, COALESCE(history, 0) FROM users LIMIT 1").
+		Scan(&id, &name, &jid, &qrcode, &history)
 
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
@@ -415,9 +379,7 @@ func loadOrCreateGlobalUser(db *sqlx.DB) error {
 				"Id":      id,
 				"Name":    name,
 				"Jid":     "",
-				"Webhook": "",
 				"Token":   token,
-				"Events":  "",
 				"Qrcode":  "",
 				"History": "0",
 			}}
@@ -436,9 +398,7 @@ func loadOrCreateGlobalUser(db *sqlx.DB) error {
 			"Id":      id,
 			"Name":    name,
 			"Jid":     jid,
-			"Webhook": webhook,
 			"Token":   token,
-			"Events":  events,
 			"Qrcode":  qrcode,
 			"History": fmt.Sprintf("%d", history),
 		}}

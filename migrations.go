@@ -48,6 +48,10 @@ var migrations = []Migration{
 		ID:   8,
 		Name: "add_data_json",
 	},
+	{
+		ID:   9,
+		Name: "add_events_table",
+	},
 }
 
 // GenerateRandomID creates a random string ID
@@ -227,6 +231,28 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 	case 8:
 		// Add dataJson column to message_history table
 		err = addColumnIfNotExistsSQLite(tx, "message_history", "datajson", "TEXT")
+	case 9:
+		// Create events table for storing all WhatsApp events
+		err = createTableIfNotExistsSQLite(tx, "events", `
+			CREATE TABLE events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id TEXT NOT NULL,
+				event_type TEXT NOT NULL,
+				payload TEXT NOT NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			)`)
+		if err == nil {
+			// Create index on user_id and created_at for efficient queries
+			_, err = tx.Exec(`
+				CREATE INDEX IF NOT EXISTS idx_events_user_created
+				ON events (user_id, created_at DESC)`)
+		}
+		if err == nil {
+			// Create index on event_type for filtering by event type
+			_, err = tx.Exec(`
+				CREATE INDEX IF NOT EXISTS idx_events_type
+				ON events (event_type)`)
+		}
 	}
 
 	if err != nil {

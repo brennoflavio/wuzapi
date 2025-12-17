@@ -34,146 +34,48 @@ type MyClient struct {
 	eventHandlerID uint32
 	userID         string
 	token          string
-	subscriptions  []string
 	db             *sqlx.DB
 	s              *server
 }
 
-func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
-	jsonDataStr := string(jsonData)
-
-	instance_name := globalUser.Get("Name")
-
-	if *globalWebhook != "" {
-		log.Info().Str("url", *globalWebhook).Msg("Calling global webhook")
-		// Add extra information for the global webhook
-		globalData := map[string]string{
-			"jsonData":     jsonDataStr,
-			"userID":       userID,
-			"instanceName": instance_name,
-		}
-		callHook(*globalWebhook, globalData, userID)
-	}
-}
-
-func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID string, token string) {
-	instance_name := globalUser.Get("Name")
-	data := map[string]string{
-		"jsonData":     string(jsonData),
-		"userID":       userID,
-		"instanceName": instance_name,
-	}
-
-	log.Debug().Interface("webhookData", data).Msg("Data being sent to webhook")
-
-	if webhookurl != "" {
-		log.Info().Str("url", webhookurl).Msg("Calling user webhook")
-
-		if path == "" {
-			go callHook(webhookurl, data, userID)
-		} else {
-			// Create a channel to capture the error from the goroutine
-			errChan := make(chan error, 1)
-			go func() {
-				err := callHookFile(webhookurl, data, userID, path)
-				errChan <- err
-			}()
-
-			// Optionally handle the error from the channel (if needed)
-			if err := <-errChan; err != nil {
-				log.Error().Err(err).Msg("Error calling hook file")
-			}
-		}
-	} else {
-		log.Warn().Str("userid", userID).Msg("No webhook set for user")
-	}
-}
-
-func updateAndGetUserSubscriptions(mycli *MyClient) ([]string, error) {
-	// Get events from globalUser
-	currentEvents := globalUser.Get("Events")
-
-	// Update client subscriptions if changed
-	eventarray := strings.Split(currentEvents, ",")
-	var subscribedEvents []string
-	if len(eventarray) == 1 && eventarray[0] == "" {
-		subscribedEvents = []string{}
-	} else {
-		for _, arg := range eventarray {
-			arg = strings.TrimSpace(arg)
-			if arg != "" && Find(supportedEventTypes, arg) {
-				subscribedEvents = append(subscribedEvents, arg)
-			}
-		}
-	}
-
-	// Update the client subscriptions
-	mycli.subscriptions = subscribedEvents
-
-	return subscribedEvents, nil
-}
-
-func getUserWebhookUrl(token string) string {
-	return globalUser.Get("Webhook")
-}
-
-func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path string) {
-	webhookurl := getUserWebhookUrl(mycli.token)
-
-	// Get updated events from cache/database
-	subscribedEvents, err := updateAndGetUserSubscriptions(mycli)
+// saveEvent stores an event in the events table
+func saveEvent(db *sqlx.DB, userID string, eventType string, payload map[string]interface{}) error {
+	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		return
+		log.Error().Err(err).Msg("Failed to marshal event payload to JSON")
+		return err
 	}
 
+	_, err = db.Exec(
+		"INSERT INTO events (user_id, event_type, payload) VALUES ($1, $2, $3)",
+		userID, eventType, string(jsonPayload),
+	)
+	if err != nil {
+		log.Error().Err(err).Str("eventType", eventType).Str("userID", userID).Msg("Failed to save event to database")
+		return err
+	}
+
+	log.Debug().Str("eventType", eventType).Str("userID", userID).Msg("Event saved to database")
+	return nil
+}
+
+// processEvent stores the event in the database and sends stdio notification if in stdio mode
+func processEvent(mycli *MyClient, postmap map[string]interface{}) {
 	eventType, ok := postmap["type"].(string)
 	if !ok {
 		log.Error().Msg("Event type is not a string in postmap")
 		return
 	}
 
-	// Log subscription details for debugging
-	log.Debug().
-		Str("userID", mycli.userID).
-		Str("eventType", eventType).
-		Strs("subscribedEvents", subscribedEvents).
-		Msg("Checking event subscription")
-
-	// Check if the current event is in the subscriptions
-	checkIfSubscribedInEvent := checkIfSubscribedToEvent(subscribedEvents, postmap["type"].(string), mycli.userID)
-	if !checkIfSubscribedInEvent {
-		return
+	// Save event to database
+	if err := saveEvent(mycli.db, mycli.userID, eventType, postmap); err != nil {
+		log.Error().Err(err).Str("eventType", eventType).Msg("Failed to save event")
 	}
 
-	// In stdio mode, send as JSON-RPC notification instead of HTTP webhook
+	// In stdio mode, also send as JSON-RPC notification
 	if mycli.s != nil && mycli.s.mode == Stdio {
 		mycli.s.SendNotification(eventType, postmap)
-		return
 	}
-
-	// Prepare webhook data
-	jsonData, err := json.Marshal(postmap)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal postmap to JSON")
-		return
-	}
-
-	sendToUserWebHook(webhookurl, path, jsonData, mycli.userID, mycli.token)
-
-	// Get global webhook if configured
-	go sendToGlobalWebHook(jsonData, mycli.token, mycli.userID)
-}
-
-func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
-	if !Find(subscribedEvents, eventType) && !Find(subscribedEvents, "All") {
-		log.Warn().
-			Str("type", eventType).
-			Strs("subscribedEvents", subscribedEvents).
-			Str("userID", userId).
-			Msg("Skipping webhook. Not subscribed for this type")
-		return false
-	}
-	return true
 }
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
@@ -194,32 +96,11 @@ func (s *server) connectOnStartup() {
 
 	token := globalUser.Get("Token")
 	jid := globalUser.Get("Jid")
-	events := globalUser.Get("Events")
 
 	log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-
-	// Gets and set subscription to webhook events
-	eventarray := strings.Split(events, ",")
-
-	var subscribedEvents []string
-	if len(eventarray) == 1 && eventarray[0] == "" {
-		subscribedEvents = []string{}
-	} else {
-		for _, arg := range eventarray {
-			if !Find(supportedEventTypes, arg) {
-				log.Warn().Str("Type", arg).Msg("Event type discarded")
-				continue
-			}
-			if !Find(subscribedEvents, arg) {
-				subscribedEvents = append(subscribedEvents, arg)
-			}
-		}
-	}
-
-	eventstring := strings.Join(subscribedEvents, ",")
-	log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
+	log.Info().Str("jid", jid).Msg("Attempt to connect")
 	killchannel[txtid] = make(chan bool, 1)
-	go s.startClient(txtid, jid, token, subscribedEvents)
+	go s.startClient(txtid, jid, token)
 }
 
 func parseJID(arg string) (types.JID, bool) {
@@ -241,7 +122,7 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func (s *server) startClient(userID string, textjid string, token string, subscriptions []string) {
+func (s *server) startClient(userID string, textjid string, token string) {
 	log.Info().Str("userid", userID).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
 
 	// Connection retry constants
@@ -285,7 +166,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
 	store.DeviceProps.Os = osName
 
-	mycli := MyClient{client, 1, userID, token, subscriptions, s.db, s}
+	mycli := MyClient{client, 1, userID, token, s.db, s}
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
 
 	// Store the MyClient in clientManager
@@ -351,7 +232,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					postmap["qrCodeBase64"] = base64qrcode
 					postmap["type"] = "QR"
 
-					sendEventWithWebHook(&mycli, postmap, "")
+					processEvent(&mycli, postmap)
 
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
@@ -359,7 +240,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					postmap := make(map[string]interface{})
 					postmap["event"] = evt.Event
 					postmap["type"] = "QRTimeout"
-					sendEventWithWebHook(&mycli, postmap, "")
+					processEvent(&mycli, postmap)
 
 					sqlStmt := `UPDATE users SET qrcode='' WHERE id=$1`
 					_, err := s.db.Exec(sqlStmt, userID)
@@ -450,7 +331,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 			postmap["type"] = "ConnectFailure"
 			postmap["attempts"] = maxConnectionRetries
 			postmap["reason"] = "Failed to connect after retry attempts"
-			sendEventWithWebHook(&mycli, postmap, "")
+			processEvent(&mycli, postmap)
 
 			return
 		}
@@ -493,7 +374,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	postmap := make(map[string]interface{})
 	postmap["event"] = rawEvt
 	dowebhook := 0
-	path := ""
 
 	switch evt := rawEvt.(type) {
 	case *events.AppStateSyncComplete:
@@ -1444,6 +1324,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	}
 
 	if dowebhook == 1 {
-		sendEventWithWebHook(mycli, postmap, path)
+		processEvent(mycli, postmap)
 	}
 }
