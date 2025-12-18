@@ -169,11 +169,6 @@ func main() {
 		}
 	}
 
-	// Override osName from environment if set
-	if v := os.Getenv("SESSION_DEVICE_NAME"); v != "" {
-		*osName = v
-	}
-
 	if *versionFlag {
 		fmt.Printf("WuzAPI version %s\n", version)
 		os.Exit(0)
