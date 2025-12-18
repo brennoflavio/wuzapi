@@ -27,7 +27,7 @@ Endpoint: _/session/connect_
 Method: **POST**
 
 ```
-curl -s -X POST -H 'Content-Type: application/json' --data '{"Subscribe":["Message"],"Immediate":false}' http://localhost:8080/session/connect 
+curl -s -X POST -H 'Content-Type: application/json' --data '{"Immediate":false}' http://localhost:8080/session/connect 
 ```
 
 Response:

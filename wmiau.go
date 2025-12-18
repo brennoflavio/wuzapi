@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/mdp/qrterminal/v3"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
 	"github.com/skip2/go-qrcode"
@@ -166,9 +165,7 @@ func (s *server) startClient(userID string, textjid string) {
 
 			for evt := range qrChan {
 				if evt.Event == "code" {
-					// Display QR code in terminal (useful for testing/developing)
-					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-					fmt.Println("QR code:\n", evt.Code)
+					log.Info().Msg("QR code received")
 					// Store encoded/embeded base64 QR on database for retrieval with the /qr endpoint
 					image, _ := qrcode.Encode(evt.Code, qrcode.Medium, 256)
 					base64qrcode := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
