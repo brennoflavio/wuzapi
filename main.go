@@ -255,8 +255,6 @@ func main() {
 	}
 	s.routes()
 
-	s.connectOnStartup()
-
 	startHTTPMode(s)
 }
 

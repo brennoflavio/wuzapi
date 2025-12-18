@@ -68,16 +68,6 @@ func processEvent(mycli *MyClient, postmap map[string]interface{}) {
 	}
 }
 
-// Connects to Whatsapp Websocket on server startup
-func (s *server) connectOnStartup() {
-	txtid := globalUser.Get("Id")
-	jid := globalUser.Get("Jid")
-
-	log.Info().Str("jid", jid).Msg("Connect to Whatsapp on startup")
-	killchannel[txtid] = make(chan bool, 1)
-	go s.startClient(txtid, jid)
-}
-
 func parseJID(arg string) (types.JID, bool) {
 	if arg[0] == '+' {
 		arg = arg[1:]
