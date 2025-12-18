@@ -69,22 +69,9 @@ func processEvent(mycli *MyClient, postmap map[string]interface{}) {
 	}
 }
 
-// Connects to Whatsapp Websocket on server startup if last state was connected
+// Connects to Whatsapp Websocket on server startup
 func (s *server) connectOnStartup() {
-	// Check if the global user should be connected on startup
 	txtid := globalUser.Get("Id")
-	var connected int
-	err := s.db.Get(&connected, "SELECT connected FROM users WHERE id=$1", txtid)
-	if err != nil {
-		log.Error().Err(err).Msg("DB Problem checking connected status")
-		return
-	}
-
-	if connected != 1 {
-		log.Info().Str("userId", txtid).Msg("User not marked as connected, skipping startup connection")
-		return
-	}
-
 	jid := globalUser.Get("Jid")
 
 	log.Info().Str("jid", jid).Msg("Connect to Whatsapp on startup")
