@@ -74,4 +74,7 @@ func (s *server) routes() {
 	s.router.Handle("/group/updateparticipants", s.UpdateGroupParticipants()).Methods("POST")
 
 	s.router.Handle("/newsletter/list", s.ListNewsletter()).Methods("GET")
+
+	s.router.Handle("/events", s.GetEvents()).Methods("GET")
+	s.router.Handle("/event/{id}", s.DeleteEvent()).Methods("DELETE")
 }
