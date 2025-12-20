@@ -57,11 +57,12 @@ func (s *server) GetEvents() http.HandlerFunc {
 
 func (s *server) DeleteEvent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Info().
-			Msg("New Delete Event Request")
-
 		vars := mux.Vars(r)
 		id := vars["id"]
+
+		log.Info().
+			Str("event_id", id).
+			Msg("New Delete Event Request")
 
 		s.db.Exec("DELETE FROM events WHERE id = ?", id)
 
