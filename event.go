@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/zerolog/log"
 )
 
 type Event struct {
@@ -19,6 +20,9 @@ type Event struct {
 
 func (s *server) GetEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Info().
+			Msg("New Get Event Request")
+
 		limit := 10
 		if limitParam := r.URL.Query().Get("limit"); limitParam != "" {
 			if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
@@ -53,6 +57,9 @@ func (s *server) GetEvents() http.HandlerFunc {
 
 func (s *server) DeleteEvent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Info().
+			Msg("New Delete Event Request")
+
 		vars := mux.Vars(r)
 		id := vars["id"]
 
