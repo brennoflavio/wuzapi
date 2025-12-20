@@ -739,7 +739,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postmap["type"] = "FBMessage"
 		log.Info().Str("info", evt.Info.SourceString()).Msg("Facebook message received")
 	default:
-		postmap["type"] = "Unknown"
+		postmap["type"] = fmt.Sprintf("%T", evt)
 		log.Warn().Str("event", fmt.Sprintf("%+v", evt)).Msg("Unhandled event")
 	}
 
