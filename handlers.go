@@ -2182,7 +2182,7 @@ func (s *server) CheckUser() http.HandlerFunc {
 func (s *server) GetUser() http.HandlerFunc {
 
 	type checkUserStruct struct {
-		Phone []string
+		JID []string
 	}
 
 	type UserCollection struct {
@@ -2204,13 +2204,13 @@ func (s *server) GetUser() http.HandlerFunc {
 			return
 		}
 
-		if len(t.Phone) < 1 {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Phone in Payload"))
+		if len(t.JID) < 1 {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing JID in Payload"))
 			return
 		}
 
 		var jids []types.JID
-		for _, arg := range t.Phone {
+		for _, arg := range t.JID {
 			jid, err := types.ParseJID(arg)
 			if err != nil {
 				return
