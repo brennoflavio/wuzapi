@@ -415,11 +415,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					postmap["file"] = fileData
 				}
 
-				// Also include base64 for backward compatibility
-				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
-				postmap["mimeType"] = img.GetMimetype()
-				postmap["fileName"] = fileData.FileName
-
 				log.Info().Str("path", fileData.Path).Msg("Image processed")
 			}
 
@@ -455,11 +450,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				} else {
 					postmap["file"] = fileData
 				}
-
-				// Also include base64 for backward compatibility
-				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
-				postmap["mimeType"] = audio.GetMimetype()
-				postmap["fileName"] = fileData.FileName
 
 				log.Info().Str("path", fileData.Path).Msg("Audio processed")
 			}
@@ -497,11 +487,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					postmap["file"] = fileData
 				}
 
-				// Also include base64 for backward compatibility
-				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
-				postmap["mimeType"] = document.GetMimetype()
-				postmap["fileName"] = fileData.FileName
-
 				log.Info().Str("path", fileData.Path).Msg("Document processed")
 			}
 
@@ -538,11 +523,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					postmap["file"] = fileData
 				}
 
-				// Also include base64 for backward compatibility
-				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
-				postmap["mimeType"] = video.GetMimetype()
-				postmap["fileName"] = fileData.FileName
-
 				log.Info().Str("path", fileData.Path).Msg("Video processed")
 			}
 
@@ -577,11 +557,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				} else {
 					postmap["file"] = fileData
 				}
-
-				// Also include base64 for backward compatibility
-				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
-				postmap["mimeType"] = sticker.GetMimetype()
-				postmap["fileName"] = fileData.FileName
 
 				// useful metadata (optional, but handy)
 				postmap["isSticker"] = true
