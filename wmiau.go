@@ -418,9 +418,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				// Also include base64 for backward compatibility
 				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
 				postmap["mimeType"] = img.GetMimetype()
-				postmap["fileName"] = fileData["fileName"]
+				postmap["fileName"] = fileData.FileName
 
-				log.Info().Str("path", fileData["path"].(string)).Msg("Image processed")
+				log.Info().Str("path", fileData.Path).Msg("Image processed")
 			}
 
 			// try to get Audio if any
@@ -459,9 +459,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				// Also include base64 for backward compatibility
 				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
 				postmap["mimeType"] = audio.GetMimetype()
-				postmap["fileName"] = fileData["fileName"]
+				postmap["fileName"] = fileData.FileName
 
-				log.Info().Str("path", fileData["path"].(string)).Msg("Audio processed")
+				log.Info().Str("path", fileData.Path).Msg("Audio processed")
 			}
 
 			// try to get Document if any
@@ -500,9 +500,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				// Also include base64 for backward compatibility
 				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
 				postmap["mimeType"] = document.GetMimetype()
-				postmap["fileName"] = fileData["fileName"]
+				postmap["fileName"] = fileData.FileName
 
-				log.Info().Str("path", fileData["path"].(string)).Msg("Document processed")
+				log.Info().Str("path", fileData.Path).Msg("Document processed")
 			}
 
 			// try to get Video if any
@@ -541,9 +541,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				// Also include base64 for backward compatibility
 				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
 				postmap["mimeType"] = video.GetMimetype()
-				postmap["fileName"] = fileData["fileName"]
+				postmap["fileName"] = fileData.FileName
 
-				log.Info().Str("path", fileData["path"].(string)).Msg("Video processed")
+				log.Info().Str("path", fileData.Path).Msg("Video processed")
 			}
 
 			sticker := evt.Message.GetStickerMessage()
@@ -581,13 +581,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				// Also include base64 for backward compatibility
 				postmap["base64"] = base64.StdEncoding.EncodeToString(data)
 				postmap["mimeType"] = sticker.GetMimetype()
-				postmap["fileName"] = fileData["fileName"]
+				postmap["fileName"] = fileData.FileName
 
 				// useful metadata (optional, but handy)
 				postmap["isSticker"] = true
 				postmap["stickerAnimated"] = sticker.GetIsAnimated()
 
-				log.Info().Str("path", fileData["path"].(string)).Msg("Sticker processed")
+				log.Info().Str("path", fileData.Path).Msg("Sticker processed")
 			}
 
 		}

@@ -11,6 +11,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// SavedFile contains metadata about a saved file
+type SavedFile struct {
+	URL      string `json:"url"`
+	Path     string `json:"path"`
+	Size     int    `json:"size"`
+	MimeType string `json:"mimeType"`
+	FileName string `json:"fileName"`
+}
+
 // FileManager manages local file storage operations
 type FileManager struct {
 	mu       sync.RWMutex
@@ -138,7 +147,7 @@ func (m *FileManager) GenerateFilePath(userID, contactJID, messageID string, mim
 
 // SaveFile saves file to disk and returns metadata
 func (m *FileManager) SaveFile(userID, contactJID, messageID string,
-	data []byte, mimeType string, fileName string, isIncoming bool) (map[string]interface{}, error) {
+	data []byte, mimeType string, fileName string, isIncoming bool) (*SavedFile, error) {
 
 	// Generate relative path
 	relativePath := m.GenerateFilePath(userID, contactJID, messageID, mimeType, isIncoming)
@@ -160,13 +169,13 @@ func (m *FileManager) SaveFile(userID, contactJID, messageID string,
 	// Generate public URL
 	publicURL := fmt.Sprintf("%s/%s", m.mediaURL, relativePath)
 
-	// Return file metadata (compatible with previous S3 response format)
-	fileData := map[string]interface{}{
-		"url":      publicURL,
-		"path":     relativePath,
-		"size":     len(data),
-		"mimeType": mimeType,
-		"fileName": fileName,
+	// Return file metadata
+	fileData := &SavedFile{
+		URL:      publicURL,
+		Path:     relativePath,
+		Size:     len(data),
+		MimeType: mimeType,
+		FileName: fileName,
 	}
 
 	log.Debug().

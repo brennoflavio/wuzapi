@@ -218,7 +218,7 @@ func (s *server) respondWithJSON(w http.ResponseWriter, statusCode int, payload 
 }
 
 // ProcessOutgoingMedia handles media processing for outgoing messages
-func ProcessOutgoingMedia(userID string, contactJID string, messageID string, data []byte, mimeType string, fileName string) (map[string]interface{}, error) {
+func ProcessOutgoingMedia(userID string, contactJID string, messageID string, data []byte, mimeType string, fileName string) (*SavedFile, error) {
 	// Save file to disk (outgoing messages are always in outbox)
 	fileData, err := GetFileManager().SaveFile(
 		userID,
